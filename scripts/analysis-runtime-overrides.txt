@@ -1,0 +1,5 @@
+# uv overrides for scripts/analysis-runtime-requirements.txt.
+# Demucs @ e976d93 declares torchaudio>=0.8,<2.1. Crowd2 runs it on the same
+# torch/torchaudio 2.5.1 as Beat This (verified: identical kick onsets, Beat
+# This beats and grid versus the WSL torch 2.0.1 reference).
+torchaudio==2.5.1+cpu

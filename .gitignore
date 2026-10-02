@@ -1,0 +1,77 @@
+# Installed dependencies and generated builds
+node_modules/
+.next*/
+out/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+
+# Local settings and secrets
+.env*
+!.env.example
+*.pem
+*.key
+
+# Personal catalogue, teaching records, recordings and derived analyses
+/data/
+/public/analysis/
+/public/section-labels.json
+/uploaded-tracks.json
+
+# Local tooling, transcripts, working files and backups
+/Codex/
+/tools-claude-sessions/
+**/__pycache__/
+*.pyc
+.venv/
+venv/
+*.log
+*.jsonl
+*.bak
+*.tmp
+*.zip
+*.7z
+*.tar
+*.tar.gz
+.DS_Store
+Thumbs.db
+
+# Downloaded runtimes, model weights, audio and private local settings
+/runtimes/
+/models/
+/public/audio/
+*.wav
+*.mp3
+*.flac
+*.m4a
+*.ogg
+*.aiff
+*.aif
+*.ape
+*.mp4
+*.ckpt
+*.pth
+*.pt
+*.th
+*.safetensors
+*.exe
+*.dll
+*.msi
+*.part
+*.partial
+.npmrc
+.pnpm-store/
+.uv-cache/
+.cache/
+connection.json
+*pairing*.json
+*.p12
+*.pfx
+*.dump
+*.sqlite*
+*.db
+
+# Local native DJ driver environment; pairing/settings live outside the repo
+/.audio-bridge/

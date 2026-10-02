@@ -1,0 +1,314 @@
+[
+  {
+    "savedAt": "2000-01-02T00:00:00.000Z",
+    "beats": 96,
+    "outgoing": {
+      "name": "Regression track 1",
+      "bpm": 145,
+      "duration": 512.453,
+      "entryDrop": 238.746,
+      "exitHandoff": 278.028,
+      "scannedAt": "2000-01-01T00:00:00.000Z",
+      "markStart": 313.263,
+      "markEnd": 351.97
+    },
+    "incoming": {
+      "name": "Regression track 2",
+      "bpm": 144.02,
+      "duration": 460.747,
+      "entryDrop": 121.034,
+      "exitHandoff": 269.781,
+      "scannedAt": "2000-01-01T00:00:00.000Z",
+      "markStart": 58.345,
+      "markEnd": 97.536
+    }
+  },
+  {
+    "savedAt": "2000-01-02T00:00:00.000Z",
+    "beats": 96,
+    "outgoing": {
+      "name": "Regression track 3",
+      "bpm": 148.02,
+      "duration": 455.987,
+      "entryDrop": 78.047,
+      "exitHandoff": 350.447,
+      "scannedAt": "2000-01-01T00:00:00.000Z",
+      "markStart": 311.53304572587643,
+      "markEnd": 350.447444
+    },
+    "incoming": {
+      "name": "Regression track 4",
+      "bpm": 147.97,
+      "duration": 465.787,
+      "entryDrop": 168.843,
+      "exitHandoff": 415.353,
+      "scannedAt": "2000-01-01T00:00:00.000Z",
+      "markStart": 129.92022461836092,
+      "markEnd": 168.842903997184
+    }
+  },
+  {
+    "savedAt": "2000-01-02T00:00:00.000Z",
+    "beats": 96,
+    "outgoing": {
+      "name": "Regression track 5",
+      "bpm": 147.97,
+      "duration": 465.787,
+      "entryDrop": 168.843,
+      "exitHandoff": 415.353,
+      "scannedAt": "2000-01-01T00:00:00.000Z",
+      "markStart": 376.4255425993375,
+      "markEnd": 415.3525373760071
+    },
+    "incoming": {
+      "name": "Regression track 6",
+      "bpm": 147.98,
+      "duration": 600.854,
+      "entryDrop": 187.007,
+      "exitHandoff": 540.511,
+      "scannedAt": "2000-01-01T00:00:00.000Z",
+      "markStart": 148.07926618592873,
+      "markEnd": 187.00683230144634
+    }
+  },
+  {
+    "savedAt": "2000-01-02T00:00:00.000Z",
+    "beats": 96,
+    "outgoing": {
+      "name": "Regression track 7",
+      "bpm": 147.98,
+      "duration": 600.854,
+      "entryDrop": 187.007,
+      "exitHandoff": 540.511,
+      "scannedAt": "2000-01-01T00:00:00.000Z",
+      "markStart": 501.58719705509145,
+      "markEnd": 540.5108557038884
+    },
+    "incoming": {
+      "name": "Regression track 8",
+      "bpm": 145.06,
+      "duration": 469.627,
+      "entryDrop": 92.787,
+      "exitHandoff": 440.361,
+      "scannedAt": "2000-01-01T00:00:00.000Z",
+      "markStart": 53.058483519144744,
+      "markEnd": 92.78703208137779
+    }
+  },
+  {
+    "savedAt": "2000-01-02T00:00:00.000Z",
+    "beats": 96,
+    "outgoing": {
+      "name": "Regression track 9",
+      "bpm": 145.06,
+      "duration": 469.627,
+      "entryDrop": 92.787,
+      "exitHandoff": 440.361,
+      "scannedAt": "2000-01-01T00:00:00.000Z",
+      "markStart": 400.65225573417575,
+      "markEnd": 440.36067158673984
+    },
+    "incoming": {
+      "name": "Regression track 10",
+      "bpm": 148.04,
+      "duration": 511.174,
+      "entryDrop": 45.413,
+      "exitHandoff": 265.892,
+      "scannedAt": "2000-01-01T00:00:00.000Z",
+      "markStart": 6.505202455847938,
+      "markEnd": 45.413274184595025
+    }
+  },
+  {
+    "savedAt": "2000-01-02T00:00:00.000Z",
+    "beats": 96,
+    "outgoing": {
+      "name": "Regression track 11",
+      "bpm": 146.32,
+      "duration": 361.64,
+      "entryDrop": 93.528,
+      "exitHandoff": 197.266,
+      "scannedAt": "2000-01-01T00:00:00.000Z",
+      "markStart": 289.5338308733124,
+      "markEnd": 328.99429736637404
+    },
+    "incoming": {
+      "name": "Regression track 12",
+      "bpm": 145,
+      "duration": 419.08,
+      "entryDrop": 60.326,
+      "exitHandoff": 229.171,
+      "scannedAt": "2000-01-01T00:00:00.000Z",
+      "markStart": 59.544245836059346,
+      "markEnd": 99.25894350561997
+    }
+  },
+  {
+    "savedAt": "2000-01-02T00:00:00.000Z",
+    "beats": 96,
+    "outgoing": {
+      "name": "Regression track 13",
+      "bpm": 145,
+      "duration": 442.332,
+      "entryDrop": 52.134,
+      "exitHandoff": 234.205,
+      "scannedAt": "2000-01-01T00:00:00.000Z",
+      "markStart": 365.81837,
+      "markEnd": 405.5267724827271
+    },
+    "incoming": {
+      "name": "Regression track 14",
+      "bpm": 148.16,
+      "duration": 480.747,
+      "entryDrop": 52.799,
+      "exitHandoff": 260.154,
+      "scannedAt": "2000-01-01T00:00:00.000Z",
+      "markStart": 52.718454,
+      "markEnd": 91.66451228490892
+    }
+  },
+  {
+    "savedAt": "2000-01-02T00:00:00.000Z",
+    "beats": 64,
+    "outgoing": {
+      "name": "Regression track 15",
+      "bpm": 142,
+      "duration": 409.454,
+      "entryDrop": 71.078,
+      "exitHandoff": 219.811,
+      "scannedAt": "2000-01-01T00:00:00.000Z",
+      "markStart": 368.512548409353,
+      "markEnd": 395.5551903735502
+    },
+    "incoming": {
+      "name": "Regression track 16",
+      "bpm": 151.81,
+      "duration": 397.254,
+      "entryDrop": 104.753,
+      "exitHandoff": 212.257,
+      "scannedAt": "2000-01-01T00:00:00.000Z",
+      "markStart": 39.713170571360855,
+      "markEnd": 52.96111528292209
+    }
+  },
+  {
+    "savedAt": "2000-01-02T00:00:00.000Z",
+    "beats": 64,
+    "outgoing": {
+      "name": "Regression track 17",
+      "bpm": 151.81,
+      "duration": 397.254,
+      "entryDrop": 104.753,
+      "exitHandoff": 212.257,
+      "scannedAt": "2000-01-01T00:00:00.000Z",
+      "markStart": 344.30371955307567,
+      "markEnd": 370.7810671004802
+    },
+    "incoming": {
+      "name": "Regression track 18",
+      "bpm": 146.34,
+      "duration": 511.254,
+      "entryDrop": 51.19,
+      "exitHandoff": 270.95,
+      "scannedAt": "2000-01-01T00:00:00.000Z",
+      "markStart": 50.957586141208914,
+      "markEnd": 77.30450985475699
+    }
+  },
+  {
+    "savedAt": "2000-01-02T00:00:00.000Z",
+    "beats": 64,
+    "outgoing": {
+      "name": "Regression track 19",
+      "bpm": 146.34,
+      "duration": 511.254,
+      "entryDrop": 51.19,
+      "exitHandoff": 270.95,
+      "scannedAt": "2000-01-01T00:00:00.000Z",
+      "markStart": 448.8131981267019,
+      "markEnd": 475.12185766225247
+    },
+    "incoming": {
+      "name": "Regression track 20",
+      "bpm": 145.45,
+      "duration": 503.92,
+      "entryDrop": 41.855,
+      "exitHandoff": 331.87,
+      "scannedAt": "2000-01-01T00:00:00.000Z",
+      "markStart": 144.65923544622703,
+      "markEnd": 172.03605844515218
+    }
+  },
+  {
+    "savedAt": "2000-01-02T00:00:00.000Z",
+    "beats": 128,
+    "outgoing": {
+      "name": "Regression track 21",
+      "bpm": 145.05,
+      "duration": 479.987,
+      "entryDrop": 53.095,
+      "exitHandoff": 417.12,
+      "scannedAt": "2000-01-01T00:00:00.000Z",
+      "markStart": 364.17055668480697,
+      "markEnd": 417.1195513181012
+    },
+    "incoming": {
+      "name": "Regression track 22",
+      "bpm": 146.96,
+      "duration": 489.24,
+      "entryDrop": 105.006,
+      "exitHandoff": 307.515,
+      "scannedAt": "2000-01-01T00:00:00.000Z",
+      "markStart": 52.74560398879337,
+      "markEnd": 105.00603822898555
+    }
+  },
+  {
+    "savedAt": "2000-01-02T00:00:00.000Z",
+    "beats": 64,
+    "outgoing": {
+      "name": "Regression track 23",
+      "bpm": 141.73,
+      "duration": 483.474,
+      "entryDrop": 42.076,
+      "exitHandoff": 252.056,
+      "scannedAt": "2000-01-01T00:00:00.000Z",
+      "markStart": 434.94110748814546,
+      "markEnd": 462.03523555323557
+    },
+    "incoming": {
+      "name": "Regression track 24",
+      "bpm": 139.82,
+      "duration": 430.759,
+      "entryDrop": 172.45,
+      "exitHandoff": 227.377,
+      "scannedAt": "2000-01-01T00:00:00.000Z",
+      "markStart": 144.98678296691753,
+      "markEnd": 172.45002390258588
+    }
+  },
+  {
+    "savedAt": "2000-01-02T00:00:00.000Z",
+    "beats": 96,
+    "outgoing": {
+      "name": "Regression track 25",
+      "bpm": 141.18,
+      "duration": 483.083,
+      "entryDrop": 125.53,
+      "exitHandoff": 321.444,
+      "scannedAt": "2000-01-01T00:00:00.000Z",
+      "markStart": 309.3996798812475,
+      "markEnd": 350.27399516067095
+    },
+    "incoming": {
+      "name": "Regression track 26",
+      "bpm": 137.96,
+      "duration": 588.722,
+      "entryDrop": 139.777,
+      "exitHandoff": 306.726,
+      "scannedAt": "2000-01-01T00:00:00.000Z",
+      "markStart": 139.79538521120432,
+      "markEnd": 181.50099198986823
+    }
+  }
+]
