@@ -34,7 +34,7 @@ Only source and text configuration/documentation are packaged. No original files
 ## DJ hardware update
 
 - Eight new Node tests pass: profile counts, MIDI persistence/control uniqueness, prefader cue, preview/master isolation, route validation, channel wiring, failure muting and four-channel worklet PCM.
-- Six Python bridge tests pass: packet validation, channel mapping, origin/token rejection and clean shutdown, silent dropout handling, and two clock-drift simulations at ±500 ppm (20,000 output blocks each, about 107 seconds at 48 kHz).
+- Six Python bridge tests pass: packet validation, channel mapping, origin/token rejection and clean shutdown, silent dropout handling, and two clock-drift simulations at Â±500 ppm (20,000 output blocks each, about 107 seconds at 48 kHz).
 - A Chromium OfflineAudioContext render check confirms actual master/cue channel separation and that switching to Private Preview changes only headphone samples; the recording remains master-only.
 - TypeScript passes. Production webpack build passes. The default Turbopack build in the isolated check folder could not follow its external node_modules junction; webpack validation uses the same source without that staging limitation.
 - Full clean-source Node suite: 544 tests, 507 pass, 36 existing failures, 1 skipped. The failing test-name set is unchanged from the pre-hardware clean-source baseline above.
@@ -51,3 +51,11 @@ No physical DJ interface/controller was available for end-to-end validation. Pro
 - Concurrent WAV decoding now uses separate temporary files, shares in-process jobs and tolerates publication races. A four-process decoding regression plus separate route-module imports passed.
 - Build and TypeScript checks passed in an isolated checkout. The full existing suite ran 548 tests: 511 passed, 36 known failures and one skip. Failure names match the previous distribution baseline exactly. The additional concurrent decoding test passed separately. The short suite retained the same six existing failures.
 - Validation used isolated local servers; the user's playing booth was not restarted or refreshed. These source changes take effect in that booth only after a later update.
+
+## Default bass handover at the overlap exit (2 October 2026)
+
+- An unmarked bass lane keeps outgoing bass open and incoming bass killed until Z, then swaps them. It no longer falls back to an old midpoint cue or starts the handover before the selected window ends.
+- Explicit bass cues retain their existing sweep. Empty and multiple-marker selections survive draft save/restore; new automations start with no selected marker.
+- Three new behavioural tests cover the exit boundary across eight overlap lengths, clearing/saving/restoring/resizing, and preservation of selected/legacy cues. All 14 bass-focused tests pass.
+- Full suite: 552 tests, 515 passed, 36 pre-existing failures, one skipped. Failure names are unchanged. Production webpack build and TypeScript checks pass in the isolated checkout.
+- The live local booth is deliberately not updated while the DJ is mixing.

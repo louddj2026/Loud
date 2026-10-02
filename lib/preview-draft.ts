@@ -9,6 +9,8 @@
  * for a pair that has not been committed to the live tracks yet.
  */
 
+import { normaliseBassSwapBeats } from "./bass-ownership.ts";
+
 export type PreviewDraftWindow = {
   start: number | null;
   end: number | null;
@@ -36,6 +38,8 @@ export type PreviewDraft = {
   incomingWindow: PreviewDraftWindow;
   beats: number;
   bassSwapBeat?: number;
+  /** Empty means automatic bass handover at the overlap exit. */
+  bassSwapBeats?: number[];
   replicate?: PreviewDraftReplicate;
   savedAt?: string;
 };
@@ -89,6 +93,7 @@ export function parsePreviewDraft(value: unknown): PreviewDraft | null {
     incomingWindow,
     beats,
     ...(Number.isInteger(bassSwapBeat) && bassSwapBeat >= 1 && bassSwapBeat <= beats ? { bassSwapBeat } : {}),
+    ...(Array.isArray(candidate.bassSwapBeats) ? { bassSwapBeats: normaliseBassSwapBeats(candidate.bassSwapBeats, beats) } : {}),
     ...(replicate ? { replicate } : {}),
     ...(savedAt ? { savedAt } : {}),
   };

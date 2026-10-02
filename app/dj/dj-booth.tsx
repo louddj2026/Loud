@@ -1670,12 +1670,12 @@ function AssistedAutomationEditor({ value, disabled, onChange }: { value: Assist
   const pointPosition = (index: number) => index === 0
     ? "START · BEAT 0"
     : index === 1
-      ? `BASS CUE · BEAT ${value.bassSwapBeat}`
+      ? `${value.bassSwapBeats.length ? "BASS CUE" : "MID / HIGH Y"} · BEAT ${value.bassSwapBeat}`
       : `END · BEAT ${value.windowBeats}`;
   return <section className="assisted-automation-editor" aria-label="Assisted overlap automation">
-    <div className="assisted-automation-heading"><div><b>MID / HIGH EQ AUTOMATION</b><span>X = WINDOW START · Y = SELECTED BASS CUE · Z = WINDOW END</span></div><small>FIXED GAIN CALIBRATION ON</small></div>
+    <div className="assisted-automation-heading"><div><b>MID / HIGH EQ AUTOMATION</b><span>X = WINDOW START · Y = MID/HIGH ANCHOR · Z = WINDOW END</span></div><small>FIXED GAIN CALIBRATION ON</small></div>
     <div className="assisted-automation-grid"><span>POINT</span><span>FIXED POSITION</span><span>INCOMING MID/HIGH</span><span>OUTGOING MID/HIGH</span>{value.points.map((point, index) => <div className="assisted-automation-row" key={index}><b>{["X", "Y", "Z"][index]}</b><strong>{pointPosition(index)}</strong><label><input disabled={disabled} aria-label={`Point ${["X", "Y", "Z"][index]} incoming percent`} type="number" min="0" max="150" step=".5" value={point.incomingPercent} onChange={(event) => updatePoint(index, { incomingPercent: Number(event.target.value) })} /><em>%</em></label><label><input disabled={disabled} aria-label={`Point ${["X", "Y", "Z"][index]} outgoing percent`} type="number" min="0" max="150" step=".5" value={point.outgoingPercent} onChange={(event) => updatePoint(index, { outgoingPercent: Number(event.target.value) })} /><em>%</em></label></div>)}</div>
-    <p>Choose the bass cue on the beat ruler above. Automation sweeps the two low EQs from 25% to 75% through the beat immediately before that cue; the manual deck bass-kill controls remain available.</p>
+    <p>Leave the bass lane unmarked to swap the bass kills as the overlap ends. Select a bass cue for an earlier handover. Automation sweeps the two low EQs from 25% to 75% through the beat immediately before that cue; the manual deck bass-kill controls remain available.</p>
   </section>;
 }
 
@@ -1750,7 +1750,7 @@ function RunupGridMapper({ analysis, start, end, beats, crowdBpm, automation, on
   // bass back and forth needs to land a cut on any beat in the phrase. The
   // timeline already scrolls and zooms, which is what makes 96+ buttons usable.
   const bassCueChoices = Array.from({ length: Math.max(0, beats - 1) }, (_, index) => index + 1);
-  const bassSwitch = automation ? assistedBassSwitchWindow(automation.bassSwapBeat) : null;
+  const bassSwitch = automation?.bassSwapBeats.length ? assistedBassSwitchWindow(automation.bassSwapBeat) : null;
   const timelineWidth = Math.max(640, manualLines.length * 38) * timelineZoom;
   const changeTimelineZoom = (direction: -1 | 1) => setTimelineZoom((current) => clamp(direction > 0 ? current * 1.5 : current / 1.5, 1, 6));
   const pointerDistance = () => {
@@ -3927,7 +3927,7 @@ export default function DjBooth() {
           if (Math.abs(current.playbackRate - outgoingRateTarget) > .00005) current.playbackRate = outgoingRateTarget;
         }
       }
-      if (mixOpened && !outgoingCut && current.currentTime >= outgoingEnd - .02) {
+      if (mixOpened && !outgoingCut && current.currentTime >= outgoingEnd) {
         outgoingCut = true;
         const endpoint = assistedAutomationAtBeat(livePreview.automation, livePreview.automation.windowBeats);
         // DJ, 26 Aug 2026: the end of the window is a bass cut to the
@@ -5455,7 +5455,7 @@ export default function DjBooth() {
       // An incoming-side loop owes the room extra outgoing beats: Z waits by
       // exactly the added time, so the outgoing plays real material while the
       // incoming's loop debt is repaid (DJ, 30 Aug 2026).
-      if (outgoingAudio.currentTime >= outgoing.exitHandoff + (runtime.loopExtensionOutgoingSeconds ?? 0) - .025) {
+      if (outgoingAudio.currentTime >= outgoing.exitHandoff + (runtime.loopExtensionOutgoingSeconds ?? 0) - (assistedPlaying.current ? 0 : .025)) {
         const exactIncomingTime = sourceTimeAlignedToCue(outgoingAudio.currentTime, outgoing.exitRunway, outgoing.exitHandoff, incoming.entryRunway, incoming.entryDrop);
         const endpointSnapEnabled = !assistedPlaying.current || ASSISTED_ENDPOINT_GRID_SNAP;
         if (endpointSnapEnabled) incomingAudio.currentTime = exactIncomingTime;
@@ -5477,6 +5477,11 @@ export default function DjBooth() {
         // tick interpolates to these targets (finishDemoBlend completes it
         // if the blend ends first).
         // A manual bass toggle still owns Low through the handoff restore.
+        // With no selected bass cut, the kill swaps at Z, not during the
+        // subsequent level-restoration ramp. Manual EQ overrides still win.
+        if (endpointAutomation && currentAutomation.bassSwapBeats.length === 0) {
+          changeDeckWithAutomatedEq(runtime, incoming.deck, { low: fixedGain?.lowDb ?? 0 });
+        }
         const incomingBefore = decksCurrent.current[incoming.deck];
         changeDeckWithAutomatedEq(runtime, incoming.deck, { currentTime: endpointIncomingTime, tempoRate: baseRate });
         runtime.incomingRestore = {
@@ -8087,6 +8092,7 @@ export default function DjBooth() {
         incomingWindow: preview.incomingWindow,
         beats: preview.beats,
         bassSwapBeat: preview.automation.bassSwapBeat,
+        bassSwapBeats: preview.automation.bassSwapBeats,
         ...(preview.replicate ? {
           replicate: {
             role: preview.replicate.role,
@@ -8183,9 +8189,14 @@ export default function DjBooth() {
               outgoingWindow: draft.outgoingWindow,
               incomingWindow: draft.incomingWindow,
               beats: restoredBeats,
-              automation: draft.bassSwapBeat
-                ? normaliseAssistedOverlapAutomation({ ...resizeAssistedOverlapAutomation(current.automation, restoredBeats), bassSwapBeat: draft.bassSwapBeat })
-                : resizeAssistedOverlapAutomation(current.automation, restoredBeats),
+              automation: normaliseAssistedOverlapAutomation({
+                ...resizeAssistedOverlapAutomation(current.automation, restoredBeats),
+                ...(draft.bassSwapBeat !== undefined ? { bassSwapBeat: draft.bassSwapBeat } : {}),
+                // Undefined retains the old single-cue draft format; [] is a
+                // deliberately unmarked lane and must survive reopening.
+                bassSwapBeats: draft.bassSwapBeats,
+                ...(draft.bassSwapBeat === undefined && draft.bassSwapBeats === undefined ? { bassSwapBeats: [] } : {}),
+              }),
               configurationOpen: bothReady,
               selectionRole: bothReady ? null : transitionPreviewWindowReady(draft.outgoingWindow) ? "incoming" : "outgoing",
               status: `Your unapplied cues were restored${draft.savedAt ? ` from ${new Date(draft.savedAt).toLocaleTimeString()}` : ""} · nothing has been sent to the live tracks`,

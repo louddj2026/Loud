@@ -48,7 +48,7 @@ Allow several GB for the installed packages, models and caches, plus room for yo
 
 Private Preview gives you a separate place to try a transition between two tracks before applying it to the live decks. It uses its own playheads, so seeking, replaying and auditioning in Preview does not move the live decks or stop their playback.
 
-Choose your mix-out and mix-in windows, listen to the overlap, and work on the timing and EQ/bass handover. You can go back and try it again without repeatedly resetting the live decks. Applying the mix placements saves your choices without seeking the live players or rewriting the analysed beat/bar grid.
+Choose your mix-out and mix-in windows, listen to the overlap, and work on the timing and EQ/bass handover. You can go back and try it again without repeatedly resetting the live decks. Applying the mix placements saves your choices without seeking the live players or rewriting the analysed beat/bar grid. With no bass switch marker selected, the outgoing track keeps its bass for the entire overlap; the bass kills swap at the end of the last beat. Selected bass markers keep their existing handover timing, and manual bass overrides remain available.
 
 What you hear depends on your audio setup:
 
@@ -69,7 +69,7 @@ Master audio can go to the listening device while headphones on the DJ computer 
 
 ## DJ hardware and MIDI presets
 
-**LOUD → AUDIO OUTPUT SETUP** contains 15 DJ interface guides and 25 controller/mixer audio guides. It supports separate master/headphone pairs or named driver endpoints, plus an optional local native bridge for ASIO and other native APIs. Traktor Audio 6 is the default guide. Private Preview replaces headphones while the house mix continues.
+**LOUD â†’ AUDIO OUTPUT SETUP** contains 15 DJ interface guides and 25 controller/mixer audio guides. It supports separate master/headphone pairs or named driver endpoints, plus an optional local native bridge for ASIO and other native APIs. Traktor Audio 6 is the default guide. Private Preview replaces headphones while the house mix continues.
 
 The MIDI wizard includes 10 stored MIDI-only controller maps. Five use documented hardware modes; five require the specified custom template in the manufacturer editor. Learn and input testing remain available.
 

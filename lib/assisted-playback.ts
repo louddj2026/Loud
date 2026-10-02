@@ -50,7 +50,7 @@ export type AssistedOverlapAutomation = {
 export const DEFAULT_ASSISTED_OVERLAP_AUTOMATION: AssistedOverlapAutomation = {
   windowBeats: 64,
   bassSwapBeat: 32,
-  bassSwapBeats: [32],
+  bassSwapBeats: [],
   points: [
     { beat: 0, incomingPercent: 76, outgoingPercent: 100 },
     { beat: 32, incomingPercent: 88, outgoingPercent: 72.5 },
@@ -64,7 +64,7 @@ const percentDb = (percent: number) => percent <= 0 ? -60 : 20 * Math.log10(perc
 const gainDb = (gain: number) => gain <= .001 ? -60 : 20 * Math.log10(gain);
 export const isAssistedOverlapBeats = (value: number): value is AssistedOverlapBeats => ASSISTED_OVERLAP_BEAT_OPTIONS.some((option) => option === value);
 
-/** Default selected bass cue: the midpoint of the assisted overlap. */
+/** Mid/high Y anchor when no bass cue has been selected. */
 export function assistedBassSwapBeat(windowBeats: number) {
   return Math.max(1, windowBeats / 2);
 }
@@ -122,7 +122,7 @@ export function normaliseAssistedOverlapAutomation(value: unknown): AssistedOver
     && listFromSource.length > 0
     && listFromSource[0] !== bassSwapBeat;
   const bassSwapBeats = listFromSource === null || singleCueOverridesList
-    ? normaliseBassSwapBeats([bassSwapBeat], windowBeats)
+    ? normaliseBassSwapBeats(singleCueSupplied ? [bassSwapBeat] : [], windowBeats)
     : listFromSource;
   return {
     windowBeats,
@@ -160,8 +160,12 @@ export function assistedAutomationAtBeat(value: AssistedOverlapAutomation, beat:
   // always hands the low end from whoever held it to whoever takes it — so a
   // cut back to the outgoing tune fades the same way, in the other direction.
   const governing = bassSwapWindowAtBeat(automation.bassSwapBeats, automation.windowBeats, position);
-  const bassWindow = governing ?? assistedBassSwitchWindow(automation.bassSwapBeat);
-  const bassSwapProgress = clamp((position - bassWindow.startBeat) / Math.max(.001, bassWindow.endBeat - bassWindow.startBeat), 0, 1);
+  // No selected cuts means outgoing bass stays open for the entire overlap.
+  // At Z, kill outgoing bass and open incoming bass, with no anticipatory sweep.
+  const bassWindow = governing ?? { startBeat: automation.windowBeats, endBeat: automation.windowBeats };
+  const bassSwapProgress = governing
+    ? clamp((position - bassWindow.startBeat) / Math.max(.001, bassWindow.endBeat - bassWindow.startBeat), 0, 1)
+    : position >= automation.windowBeats ? 1 : 0;
   const bassSwapped = bassSwapProgress >= 1;
   const ownerBeforeSwap = governing
     ? bassOwnerAtBeat(automation.bassSwapBeats, automation.windowBeats, governing.swapBeat - 1)
@@ -170,7 +174,7 @@ export function assistedAutomationAtBeat(value: AssistedOverlapAutomation, beat:
   const takingOver = Math.sin(bassSwapProgress * Math.PI / 2);
   const outgoingBassGain = ownerBeforeSwap === "outgoing" ? handingOver : takingOver;
   const incomingBassGain = ownerBeforeSwap === "outgoing" ? takingOver : handingOver;
-  const bassOwner = bassOwnerAtBeat(automation.bassSwapBeats, automation.windowBeats, position);
+  const bassOwner = !governing && bassSwapped ? "incoming" : bassOwnerAtBeat(automation.bassSwapBeats, automation.windowBeats, position);
   return {
     beat: position,
     progress: position / automation.windowBeats,
