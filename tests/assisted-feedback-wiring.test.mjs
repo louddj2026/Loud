@@ -29,19 +29,15 @@ test("deck recycle block reasons stay visible on the deck waveform", () => {
   assert.match(djSource, /const showLoadHandoff = \/ready\/\.test\(loadStatus\.toLowerCase\(\)\) \|\| \/before replacing it\/\.test\(loadStatus\);/);
 });
 
-test("Load finalizes a stopped silent outgoing handoff before opening the file chooser", () => {
-  const releaseSource = djSource.match(/const finishStoppedSilentOutgoingForLoad = \(id: DeckId\) => \{[\s\S]*?\n  \};/)?.[0] ?? "";
-  assert.ok(releaseSource, "the stale outgoing-deck recovery should be readable");
-  assert.match(releaseSource, /outgoing\.id === deck\.track\?\.id/);
-  assert.match(releaseSource, /deck\.volume <= \.001/);
-  assert.match(releaseSource, /!incomingAudio\.paused \|\| incomingAudio\.ended/);
-  assert.match(releaseSource, /finishDemoBlend\(runtime, \{ alreadySilent: true \}\)/);
-
-  const openSource = djSource.match(/const openLocalFile = \(id: DeckId\) => \{[\s\S]*?\n  \};/)?.[0] ?? "";
-  assert.ok(openSource.indexOf("finishStoppedSilentOutgoingForLoad(id)") < openSource.indexOf("deckRecycleBlockReason(id)"));
-
-  const finishSource = djSource.match(/const finishDemoBlend = async \(runtime: DemoRuntime,[\s\S]*?(?=\n  const demoTick)/)?.[0] ?? "";
-  assert.match(finishSource, /if \(!options\.alreadySilent\) await wait\(90\);/);
+test("manual Load paths use playback protection and manual replacement handling", () => {
+  for (const name of ["openLocalFile", "openTrackPicker", "loadLocalFile"]) {
+    const from = djSource.indexOf(`const ${name} =`);
+    const to = djSource.indexOf("\n  const ", from + 1);
+    const handler = djSource.slice(from, to);
+    assert.match(handler, /manualDeckLoadBlockReason\(id\)/);
+    assert.doesNotMatch(handler, /finishStoppedSilentOutgoingForLoad/);
+  }
+  assert.match(djSource, /if \(options\.manual\) prepareManualDeckLoad\(id\);/);
 });
 
 test("launching or resetting assisted playback invalidates stale search continuations", () => {

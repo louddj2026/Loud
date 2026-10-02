@@ -57,6 +57,10 @@ What you hear depends on your audio setup:
 
 Private Preview is for rehearsing the transition yourself; it does not require a second copy of your music files.
 
+With Snap to Grid enabled, Preview snaps to the beat lines it displays. Grid Override temporarily permits free placement for the selected track and clears when you leave that editing session.
+
+Load opens for paused decks even when an old transition is armed. Choosing a replacement disarms the affected transition while other decks keep playing; cancelling the picker leaves it alone. Playing decks are protected from replacement.
+
 ## LoudLink and privacy
 
 The QR code is generated locally from the current user's computer and network. No developer address is built into it, and the QR image is never sent to an external QR service. A local QR contains that computer's private LAN address and port so another device on the same network can connect; anyone who sees or scans the QR can read that address. Avoid including a live connection QR in public screenshots.

@@ -66,3 +66,12 @@ No physical DJ interface/controller was available for end-to-end validation. Pro
 - Out-of-range windows are refused without changing the existing marks. Pointer-down and keyboard activation use the same captured playhead path as Start/Finish.
 - Four new behavioural tests pass; the full suite reports 556 tests, 519 passed, 36 unchanged known failures and one skip. Build and TypeScript passed. Isolated production pages returned HTTP 200.
 - Isolated rendering confirmed button order, equal widths and unclipped text. The playing local booth remains unchanged pending the DJ's later rollout request.
+
+
+## Preview snapping and paused-deck loading (2 October 2026)
+
+- Grid Override belongs to a specific track and clears on Preview open/close, leaving the selection step, and completion or failure. Old asynchronous replies cannot reopen a newer Preview session. The armed button now says Confirm Grid Override.
+- Preview seeks and marks use its displayed window grid; unmarked windows use analysed beats. Drag/glide movement stays free until the final snap. Snap off and explicit override preserve free placement. Stored analysis and existing marks are not rewritten by snapping.
+- Manual Load opens for a paused deck regardless of transition reservations or fader level. Only selecting a replacement cancels an affected transition; other deck transports and channel settings are not touched. Playback is checked again when loading, protecting a deck started while the picker was open.
+- Thirteen focused tests pass, including the existing four middle-anchor tests. Full suite: 565 tests, 528 pass, 36 unchanged pre-existing failures, one skipped. The short suite retains its six baseline failures. TypeScript and production webpack build pass. Isolated production /dj and /crowd both return HTTP 200.
+- Local rollout remains deferred to avoid interrupting the user's mix.

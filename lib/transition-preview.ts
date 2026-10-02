@@ -3,6 +3,45 @@ export type TransitionPreviewWindow = {
   end: number | null;
 };
 
+/** Snap to the same grid Preview paints, without changing analysis or cues. */
+export function transitionPreviewSnapTime(input: {
+  time: number;
+  duration: number;
+  enabled: boolean;
+  overrideArmed: boolean;
+  window: TransitionPreviewWindow;
+  windowBeats: number;
+  analysisBeats: readonly { time: number }[];
+}) {
+  const duration = Math.max(0, input.duration);
+  const time = Math.max(0, Math.min(duration, input.time));
+  if (!input.enabled || input.overrideArmed) return time;
+  const { start, end } = input.window;
+  if (start !== null && end !== null && Number.isFinite(start) && Number.isFinite(end)
+    && end > start && Number.isFinite(input.windowBeats) && input.windowBeats > 0) {
+    const period = (end - start) / input.windowBeats;
+    const first = Math.ceil(-start / period);
+    const last = Math.floor((duration - start) / period);
+    if (first > last) return time;
+    const index = Math.max(first, Math.min(last, Math.round((time - start) / period)));
+    return Math.max(0, Math.min(duration, start + index * period));
+  }
+  const beats = input.analysisBeats;
+  if (beats.length < 2) return time;
+  let low = 0, high = beats.length - 1;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (beats[mid].time < time) low = mid + 1;
+    else high = mid;
+  }
+  const before = beats[low - 1];
+  const after = beats[low];
+  const nearest = before && Math.abs(before.time - time) <= Math.abs(after.time - time) ? before : after;
+  const period = before ? after.time - before.time : beats[1].time - beats[0].time;
+  return nearest.time >= 0 && nearest.time <= duration && Math.abs(nearest.time - time) <= period / 2
+    ? nearest.time : time;
+}
+
 /**
  * Select the pair Preview should edit. Once audio is running, the physical
  * playing-deck rotation outranks stale cue/workflow history. A runtime pair is

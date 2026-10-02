@@ -40,7 +40,7 @@ import { isKnownShortSample } from "../../lib/track-duration-policy";
 import { bassOwnerAtBeat, bassOwnershipSegments, toggleBassSwapBeat } from "../../lib/bass-ownership";
 import { nextBassOverride, overriddenBassLow } from "../../lib/bass-kill";
 import { type PreviewDraft } from "../../lib/preview-draft";
-import { TRANSITION_PREVIEW_LEAD_BEATS, deriveTransitionPreviewWindow, type TransitionPreviewAnchorEdge, transitionPreviewGridBeats, TRANSITION_PREVIEW_LIVE_ARM_GUARD_SECONDS, TRANSITION_PREVIEW_SILENT_PREROLL_BEATS, selectTransitionPreviewPair, transitionPreviewBeat, transitionPreviewCanCommit, transitionPreviewCrowdAuditionVolume, transitionPreviewLiveArmDecision, transitionPreviewMarkTime, transitionPreviewTempoRate, transitionPreviewWindowReady, type TransitionPreviewLiveRuntimeState, type TransitionPreviewWindow } from "../../lib/transition-preview";
+import { TRANSITION_PREVIEW_LEAD_BEATS, deriveTransitionPreviewWindow, type TransitionPreviewAnchorEdge, transitionPreviewGridBeats, transitionPreviewSnapTime, TRANSITION_PREVIEW_LIVE_ARM_GUARD_SECONDS, TRANSITION_PREVIEW_SILENT_PREROLL_BEATS, selectTransitionPreviewPair, transitionPreviewBeat, transitionPreviewCanCommit, transitionPreviewCrowdAuditionVolume, transitionPreviewLiveArmDecision, transitionPreviewMarkTime, transitionPreviewTempoRate, transitionPreviewWindowReady, type TransitionPreviewLiveRuntimeState, type TransitionPreviewWindow } from "../../lib/transition-preview";
 import { PREVIEW_OPEN_SEEK_TOLERANCE_SECONDS, PREVIEW_OVERLAP_RESEEK_SECONDS, PREVIEW_OVERLAP_SAMPLE_EVERY_BEATS, previewOpenSeekDecision, previewOverlapDriftSummary, type PreviewOverlapSample } from "../../lib/preview-overlap-lock";
 import { FOCUS_WAVE_DRAG_REBASE_FRACTION, FOCUS_WAVE_GLIDE_STOP_WINDOWS_PER_SECOND, FOCUS_WAVE_THROW_WINDOW_MS, focusWaveBufferedRange, focusWaveChunkPlan, focusWaveDragThresholdPx, focusWaveDragTime, focusWaveGlideStep, focusWaveShouldRebase, focusWaveThrowLimit, focusWaveThrowVelocity, type FocusWaveThrowSample } from "../../lib/waveform-gesture";
 import { replicateBlockBeats, replicateMapTime, replicateOccurrences, replicateShiftSeconds, replicateSpliceAnalysis, replicateUnmapTime, type ReplicatePlan } from "../../lib/replicate";
@@ -90,6 +90,7 @@ type LiveOpener = { track: Track; analysis: Analysis };
 type LiveSearchOptions = { waitForDeckClear?: DeckId };
 type TempoReturn = { startRate: number; startTrackTime: number; endTrackTime: number; lastAppliedAt: number };
 type LoadTrackOptions = {
+  manual?: boolean;
   preserveTransport?: boolean;
   remember?: boolean;
   /** Called once the deck holds the new tune and its audio is loading (the picker closes here). */
@@ -2030,7 +2031,8 @@ export default function DjBooth() {
    * the anchor. The ear is the landmark authority; the machine only finds
    * more of what the ear pointed at.
    */
-  const [gridOverrideArmed, setGridOverrideArmed] = useState<Record<TransitionPreviewRole, boolean>>({ outgoing: false, incoming: false });
+  const [gridOverrideArmed, setGridOverrideArmed] = useState<Record<TransitionPreviewRole, string | null>>({ outgoing: null, incoming: null });
+  const gridOverrideSession = useRef(0);
   const [gridOverrideBusy, setGridOverrideBusy] = useState(false);
   const [replicateBusy, setReplicateBusy] = useState(false);
   const [replaySets, setReplaySets] = useState<SetSummary[]>([]);
@@ -4290,6 +4292,41 @@ export default function DjBooth() {
     const current = runtime.prepared.plan.tracks[runtime.transitionIndex];
     return `Deck ${id} is still armed in the live assisted sequence${current ? ` while ${current.name} is primary` : ""} · wait until it has mixed out before replacing it`;
   };
+  // Manual Load protects actual playback, not an old transition reservation.
+  const manualDeckLoadBlockReason = (id: DeckId) => {
+    const media = mediaRefs[id].map((ref) => ref.current).filter((audio) => audio && (audio.currentSrc || audio.getAttribute("src")));
+    const playing = media.length ? media.some((audio) => !audio!.paused && !audio!.ended) : decksCurrent.current[id].playing;
+    return playing ? `Deck ${id} is playing · pause it before replacing it` : null;
+  };
+  const prepareManualDeckLoad = (id: DeckId) => {
+    const blocked = manualDeckLoadBlockReason(id);
+    if (blocked) throw new Error(blocked);
+    // Reconcile a stale UI flag from the actual paused media before the shared
+    // loader checks it. No transport or channel on another deck is changed.
+    if (decksCurrent.current[id].playing) changeDeck(id, { playing: false });
+    const runtime = demoRuntime.current;
+    if (!runtime?.prepared.plan.tracks.slice(runtime.transitionIndex).some((track) => track.deck === id)) return;
+    demoToken.current += 1;
+    assistedToken.current += 1;
+    liveToken.current += 1;
+    if (demoTimer.current) clearInterval(demoTimer.current);
+    if (emergencyTimer.current) clearInterval(emergencyTimer.current);
+    demoTimer.current = null;
+    emergencyTimer.current = null;
+    demoRuntime.current = null;
+    assistedPlaying.current = false;
+    assistedRunning.current = false;
+    liveRunning.current = false;
+    assistedReplaySnapshot.current = null;
+    publishPreparedDemo(null);
+    setAssistedPending(null);
+    setAssistedCueState(null);
+    setAssistedMode("ready");
+    setLiveMode("idle");
+    setDemoMode("ready");
+    setAssistedStatus(`Deck ${id} replacement selected · previous transition disarmed · playing decks continue`);
+    reportCrowdLiveEvent("transition.disarmed-for-manual-load", { deck: id });
+  };
   const assistedDeckCanBeRecycled = (id: DeckId) => !deckRecycleBlockReason(id);
   const assertAssistedDeckCanBeRecycled = (id: DeckId) => {
     const reason = deckRecycleBlockReason(id);
@@ -4365,6 +4402,7 @@ export default function DjBooth() {
     }
   };
   const loadTrack = async (id: DeckId, track: Track, approvedAnalysis?: Analysis | null, restoreAssistedWindows = false, analyseAfterLoad = false, options: LoadTrackOptions = {}) => {
+    if (options.manual) prepareManualDeckLoad(id);
     if (isRecording() && track.id.startsWith("upload-")) recordAction({ kind: "load", deck: id, trackId: track.id, data: { trackName: track.name } });
     // DJ, 25 Aug, until further notice: every tune loaded gets its stored
     // analysis WIPED — taught windows included, at his explicit direction —
@@ -4388,6 +4426,7 @@ export default function DjBooth() {
       analysisSupplied: Boolean(approvedAnalysis),
     });
     if (replacingTrack) {
+      if (options.manual) prepareManualDeckLoad(id);
       assertAssistedDeckCanBeRecycled(id);
       endPitchHold(id, false);
       if (assistedPlaying.current) assistedReplaySnapshot.current = null;
@@ -4565,7 +4604,7 @@ export default function DjBooth() {
   };
   const openTrackPicker = (id: DeckId) => {
     setWorkflowDeck(id);
-    const blocked = deckRecycleBlockReason(id);
+    const blocked = manualDeckLoadBlockReason(id);
     if (blocked) {
       setAssistedStatus(blocked);
       setLoopTeachingStatus((current) => ({ ...current, [id]: blocked }));
@@ -4575,34 +4614,8 @@ export default function DjBooth() {
     setPickerLoadingTrackId(null);
     setPicker(id);
   };
-  const finishStoppedSilentOutgoingForLoad = (id: DeckId) => {
-    const runtime = demoRuntime.current;
-    if (!runtime || runtime.busy || !assistedPlaying.current) return false;
-    const outgoing = runtime.prepared.plan.tracks[runtime.transitionIndex];
-    const incoming = runtime.prepared.plan.tracks[runtime.transitionIndex + 1];
-    const deck = decksCurrent.current[id];
-    const outgoingAudio = activeAudio(id);
-    const incomingAudio = incoming ? activeAudio(incoming.deck) : null;
-    const matchesOutgoing = outgoing?.deck === id && outgoing.id === deck.track?.id;
-    const outgoingStoppedAndSilent = !deck.playing && (!outgoingAudio || outgoingAudio.paused) && deck.volume <= .001;
-    const incomingHasTakenOver = Boolean(incomingAudio && (!incomingAudio.paused || incomingAudio.ended));
-    if (!matchesOutgoing || !outgoingStoppedAndSilent || !incomingHasTakenOver) return false;
-    // The room is already hearing only the incoming deck, so the normal
-    // 75 ms exit ramp has nothing left to protect. Completing the handoff
-    // synchronously advances the plan before the browser must open its file
-    // chooser in this same click gesture. This prevents a stopped, zero-fader
-    // outgoing deck from being stranded behind a stale runway runtime.
-    void finishDemoBlend(runtime, { alreadySilent: true }).catch((error: unknown) => {
-      reportCrowdLiveEvent("transition.silent-recycle-failed", {
-        deck: id,
-        ...diagnosticErrorDetails(error),
-      });
-    });
-    return true;
-  };
   const openLocalFile = (id: DeckId) => {
-    finishStoppedSilentOutgoingForLoad(id);
-    const blocked = deckRecycleBlockReason(id);
+    const blocked = manualDeckLoadBlockReason(id);
     if (blocked) {
       setAssistedStatus(blocked);
       setLoopTeachingStatus((current) => ({ ...current, [id]: blocked }));
@@ -4617,7 +4630,7 @@ export default function DjBooth() {
     event.currentTarget.value = "";
     if (!file) return;
     const id = fileLoadDeck.current;
-    const blocked = deckRecycleBlockReason(id);
+    const blocked = manualDeckLoadBlockReason(id);
     if (blocked) {
       setAssistedStatus(blocked);
       setLoopTeachingStatus((current) => ({ ...current, [id]: blocked }));
@@ -4638,7 +4651,7 @@ export default function DjBooth() {
     };
     try {
       await file.slice(0, Math.min(file.size, 64)).arrayBuffer();
-      await loadTrack(id, provisionalTrack, undefined, false, false, { remember: false, analysisNote: "Saving the file to the booth first · analysis starts once it is saved" });
+      await loadTrack(id, provisionalTrack, undefined, false, false, { manual: true, remember: false, analysisNote: "Saving the file to the booth first · analysis starts once it is saved" });
       localAudioUrls.current[id] = localAudioUrl;
       setLoopTeachingStatus((current) => ({ ...current, [id]: `Audio ready now · saving and mapping ${file.name} in the background` }));
       const response = await uploadLocalTrackFile(file, {
@@ -6998,10 +7011,15 @@ export default function DjBooth() {
   const snapToGrid = (id: DeckId, time: number) => gridSnapCurrent.current
     ? snapTimeToBeats(decksCurrent.current[id].analysis?.beats, time)
     : time;
-  const snapTransitionPreviewTime = (preview: TransitionPreviewState, role: TransitionPreviewRole, time: number) =>
-    gridOverrideArmed[role]
-      ? time // override armed: the ear places the playhead, snap stands down
-      : snapTimeToBeats((role === "outgoing" ? preview.outgoingAnalysis : preview.incomingAnalysis).beats, time);
+  const snapTransitionPreviewTime = (preview: TransitionPreviewState, role: TransitionPreviewRole, time: number) => {
+    const analysis = role === "outgoing" ? preview.outgoingAnalysis : preview.incomingAnalysis;
+    return transitionPreviewSnapTime({
+      time, duration: analysis.duration, enabled: gridSnapCurrent.current,
+      overrideArmed: gridOverrideArmed[role] === (role === "outgoing" ? preview.outgoingTrack.id : preview.incomingTrack.id),
+      window: role === "outgoing" ? preview.outgoingWindow : preview.incomingWindow,
+      windowBeats: preview.beats, analysisBeats: analysis.beats,
+    });
+  };
   const seek = (id: DeckId, rawTime: number, snap = true) => { cancelLoopTransition(id); const time = snap ? snapToGrid(id, rawTime) : rawTime; if (isRecording()) recordAction({ kind: "seek", deck: id, data: { time } }); const audio = activeAudio(id); if (audio) audio.currentTime = time; const deck = decksCurrent.current[id]; loopCycleArmed.current[id] = Boolean(deck.loopActive && deck.loopEnd !== null && time <= deck.loopEnd + .12); prepareLoopStandby(id); changeDeck(id, { currentTime: time }); };
   const playbackCueFor = (id: DeckId) => {
     const deck = decksCurrent.current[id];
@@ -8114,6 +8132,8 @@ export default function DjBooth() {
   const openTransitionPreview = () => {
     const pair = transitionPreviewPair;
     if (!pair) return;
+    gridOverrideSession.current += 1;
+    setGridOverrideArmed({ outgoing: null, incoming: null });
     transitionPreviewOutgoingVisualTime.current = null;
     transitionPreviewIncomingVisualTime.current = null;
     setPreviewMonitorRouting(true);
@@ -8214,6 +8234,8 @@ export default function DjBooth() {
     }
   };
   const closeTransitionPreview = () => {
+    gridOverrideSession.current += 1;
+    setGridOverrideArmed({ outgoing: null, incoming: null });
     const preview = transitionPreviewCurrent.current;
     transitionPreviewOutgoingVisualTime.current = null;
     transitionPreviewIncomingVisualTime.current = null;
@@ -8244,11 +8266,11 @@ export default function DjBooth() {
         : "Preview Monitor off · previous booth monitor routing restored",
     } : current);
   };
-  const seekTransitionPreview = (role: TransitionPreviewRole, time: number) => {
+  const seekTransitionPreview = (role: TransitionPreviewRole, time: number, snap = true) => {
     const preview = transitionPreview;
     if (!preview) return;
     const duration = role === "outgoing" ? preview.outgoingAnalysis.duration : preview.incomingAnalysis.duration;
-    const bounded = snapTransitionPreviewTime(preview, role, clamp(time, 0, duration));
+    const bounded = snap ? snapTransitionPreviewTime(preview, role, time) : clamp(time, 0, duration);
     const audio = transitionPreviewAudio(role);
     // The whole-track waveform remains seekable before its private decoder is
     // loaded. Store the requested position now; touch media currentTime only
@@ -8590,6 +8612,8 @@ export default function DjBooth() {
     const preview = transitionPreviewCurrent.current;
     if (!preview || gridOverrideBusy) return;
     const track = role === "outgoing" ? preview.outgoingTrack : preview.incomingTrack;
+    if (gridOverrideArmed[role] !== track.id) return;
+    const session = gridOverrideSession.current;
     const anchorSeconds = captureTransitionPreviewMarkTime(role);
     setGridOverrideBusy(true);
     setTransitionPreview((current) => current ? { ...current, status: `Reforming the grid onto ${preciseTimeLabel(anchorSeconds)} and matching that kick across the tune…` } : current);
@@ -8605,6 +8629,7 @@ export default function DjBooth() {
       for (const id of DECK_IDS) {
         if (decksCurrent.current[id].track?.id === track.id) changeDeck(id, { analysis: fresh });
       }
+      if (gridOverrideSession.current !== session) return;
       setTransitionPreview((current) => {
         if (!current) return current;
         return {
@@ -8614,7 +8639,7 @@ export default function DjBooth() {
           status: `Grid reformed: shifted ${payload.shiftMs} ms onto your point · ${payload.stamped} of ${payload.beats} beats matched your kick's signature (${payload.matches} events found)`,
         };
       });
-      setGridOverrideArmed((current) => ({ ...current, [role]: false }));
+      setGridOverrideArmed((current) => ({ ...current, [role]: null }));
       // DJ, 30 Aug 2026: after a grid change the preview must show ONE truth.
       // The sandbox holds derived copies (pinned-window lattices among them)
       // that a state patch cannot chase down - measured drawing lines ~170 ms
@@ -8622,14 +8647,21 @@ export default function DjBooth() {
       // rebuilds itself: close and reopen re-derives every surface from the
       // updated analysis. Old grid gone, new grid drawn, everywhere.
       closeTransitionPreview();
-      window.setTimeout(() => openTransitionPreview(), 150);
+      const closedSession = gridOverrideSession.current;
+      window.setTimeout(() => {
+        if (gridOverrideSession.current === closedSession) openTransitionPreview();
+      }, 150);
     } catch (error) {
-      setTransitionPreview((current) => current ? { ...current, status: error instanceof Error ? error.message : "Grid override failed" } : current);
+      if (gridOverrideSession.current === session) {
+        setTransitionPreview((current) => current ? { ...current, status: `${error instanceof Error ? error.message : "Grid override failed"} · Grid Override turned off` } : current);
+      }
     } finally {
+      if (gridOverrideSession.current === session) setGridOverrideArmed((current) => ({ ...current, [role]: null }));
       setGridOverrideBusy(false);
     }
   };
   const editTransitionPreviewWindow = (role: TransitionPreviewRole) => {
+    setGridOverrideArmed({ outgoing: null, incoming: null });
     stopTransitionPreviewPlayback(`${role === "outgoing" ? "Mix Out" : "Mix In"} window ready to edit on its private waveform`);
     setTransitionPreview((current) => current ? { ...current, configurationOpen: false, selectionRole: role } : current);
   };
@@ -8638,6 +8670,7 @@ export default function DjBooth() {
    * This is the only way forward, pressed once the length feels right.
    */
   const advanceTransitionPreviewSelection = (role: TransitionPreviewRole) => {
+    setGridOverrideArmed({ outgoing: null, incoming: null });
     const preview = transitionPreviewCurrent.current;
     if (!preview) return;
     if (role === "outgoing") { editTransitionPreviewWindow("incoming"); return; }
@@ -9447,6 +9480,7 @@ export default function DjBooth() {
       // strip — audio readiness and the real analysis progress — is visible
       // instead of a modal that said only "LOADING…" for the whole analysis.
       await loadTrack(targetDeck, track, undefined, false, true, {
+        manual: true,
         onAttached: () => {
           setPicker((current) => current === targetDeck ? null : current);
           setPickerLoadingTrackId((current) => current === track.id ? null : current);
@@ -9877,6 +9911,7 @@ export default function DjBooth() {
     const sandboxDeck = transitionPreviewDeckState(role)!;
     const cues = transitionPreviewCues(role);
     const previewLabel = outgoing ? "Mix Out" : "Mix In";
+    const overrideArmed = gridOverrideArmed[role] === track.id;
     return <section className={`transition-preview-deck transition-preview-${role}`}>
       <header><div><small>{outgoing ? "PLAYING TRACK · PRIVATE MIX OUT COPY" : "NEXT TRACK · PRIVATE MIX IN COPY"}</small><b>{track.name}</b></div><strong><TransitionPreviewTimeReadout audioRef={audioRef} fallback={time} active={transitionPreview.audition === role || transitionPreview.audition === "mix"} /></strong></header>
       <div className="transition-preview-focus-tools">
@@ -9886,7 +9921,7 @@ export default function DjBooth() {
           <button type="button" className="wave-zoom-icon" aria-label={`${previewLabel} preview moving waveform zoom in`} title="Show less time in the preview moving waveform" disabled={transitionPreviewFocusSeconds[role] <= 2} onClick={() => setTransitionPreviewFocusSeconds((current) => ({ ...current, [role]: Math.max(2, current[role] / 2) }))}><span className="cdj-icon-bezel"><ZoomInIcon /></span></button>
         </div>
       </div>
-      <div className="transition-preview-moving-wave"><MovingWave id={deckId} deck={sandboxDeck} audio={audioRef.current} cues={cues} phaseStatus={(() => { const partner = transitionPreviewDeckState(role === "outgoing" ? "incoming" : "outgoing"); return partner ? comparePhase(sandboxDeck, partner) : "uncompared"; })()} loadStatus="" windowSeconds={transitionPreviewFocusSeconds[role]} onTime={(nextTime) => seekTransitionPreview(role, nextTime)} onWindowChange={(seconds) => setTransitionPreviewFocusSeconds((current) => ({ ...current, [role]: seconds }))} onScrubChange={() => {}} scope={`preview-${role}`} visualTimeRef={visualTimeRef} declaredGrid={window.start !== null && window.end !== null ? { start: window.start, end: window.end, beats: transitionPreview.beats } : undefined}
+      <div className="transition-preview-moving-wave"><MovingWave id={deckId} deck={sandboxDeck} audio={audioRef.current} cues={cues} phaseStatus={(() => { const partner = transitionPreviewDeckState(role === "outgoing" ? "incoming" : "outgoing"); return partner ? comparePhase(sandboxDeck, partner) : "uncompared"; })()} loadStatus="" windowSeconds={transitionPreviewFocusSeconds[role]} onTime={(nextTime) => seekTransitionPreview(role, nextTime, false)} snapOnCommit={(nextTime) => snapTransitionPreviewTime(transitionPreview, role, nextTime)} onWindowChange={(seconds) => setTransitionPreviewFocusSeconds((current) => ({ ...current, [role]: seconds }))} onScrubChange={() => {}} scope={`preview-${role}`} visualTimeRef={visualTimeRef} declaredGrid={window.start !== null && window.end !== null ? { start: window.start, end: window.end, beats: transitionPreview.beats } : undefined}
         replicateView={transitionPreview.replicate?.role === role ? { plan: transitionPreview.replicate.plan } : undefined} /></div>
       <div className="transition-preview-overview-wave"><div className="transition-preview-overview-label">WHOLE TRACK WAVEFORM · CLICK ANYWHERE TO SEEK · WHITE LINE FOLLOWS PRIVATE PLAYBACK</div><OverviewWave id={deckId} deck={sandboxDeck} cues={cues} zoom={1} onSeek={(nextTime) => seekTransitionPreview(role, nextTime)} scope={`preview-${role}`} audioRef={audioRef} highlight={window.start !== null && window.end !== null ? { start: window.start, end: window.end, colour: outgoing ? "#ff784f" : "#4cf2b4" } : null} /></div>
       <div className="transition-preview-window-readout"><span>{outgoing ? "START MIX OUT" : "START MIX IN"} <b>{window.start === null ? "—" : preciseTimeLabel(window.start)}</b></span><span>{outgoing ? "FINISH MIX OUT" : "FINISH MIX IN"} <b>{window.end === null ? "—" : preciseTimeLabel(window.end)}</b></span></div>
@@ -9897,10 +9932,10 @@ export default function DjBooth() {
         <button type="button" className={`transition-preview-set-start ${anchorEdge === "start" ? "anchored" : ""}`} onPointerDown={(event) => markTransitionPreviewWindowFromPointer(event, role, "start")} onKeyDown={(event) => markTransitionPreviewWindowFromKeyboard(event, role, "start")}>{outgoing ? "START MIX OUT" : "START MIX IN"}<small>{anchorEdge === "start" ? "ANCHOR · AT WHITE PLAYHEAD" : `AT PLAYHEAD · +${transitionPreview.beats} BEATS SETS FINISH`}</small></button>
         <button type="button" className={`transition-preview-set-middle ${anchorEdge === "middle" ? "anchored" : ""}`} onPointerDown={(event) => markTransitionPreviewWindowFromPointer(event, role, "middle")} onKeyDown={(event) => markTransitionPreviewWindowFromKeyboard(event, role, "middle")}>{outgoing ? "MIDDLE MIX OUT" : "MIDDLE MIX IN"}<small>{anchorEdge === "middle" ? "MIDDLE ANCHORED · AT WHITE PLAYHEAD" : `AT PLAYHEAD · ${transitionPreview.beats / 2} BEATS EACH SIDE`}</small></button>
         <button type="button" className={`transition-preview-set-finish ${anchorEdge === "end" ? "anchored" : ""}`} onPointerDown={(event) => markTransitionPreviewWindowFromPointer(event, role, "end")} onKeyDown={(event) => markTransitionPreviewWindowFromKeyboard(event, role, "end")}>{outgoing ? "FINISH MIX OUT" : "FINISH MIX IN"}<small>{anchorEdge === "end" ? "ANCHOR · AT WHITE PLAYHEAD" : `AT PLAYHEAD · ${outgoing ? `−${transitionPreview.beats} BEATS SETS START` : `START LANDS ON THE KICK −${transitionPreview.beats} BEATS BACK`}`}</small></button>
-        <button type="button" className={gridOverrideArmed[role] ? "transition-preview-grid-override armed" : "transition-preview-grid-override"} disabled={gridOverrideBusy} onClick={() => {
-          if (gridOverrideArmed[role]) { void confirmGridOverride(role); }
-          else setGridOverrideArmed((current) => ({ ...current, [role]: true }));
-        }}>{gridOverrideBusy ? "REFORMING…" : gridOverrideArmed[role] ? "GRID OVERRIDE CONFIRMED" : "GRID OVERRIDE"}<small>{gridOverrideArmed[role] ? "REFORMS GRID TO PLAYHEAD · MATCHES THIS KICK TUNE-WIDE" : "SNAP OFF · PLACE PLAYHEAD ON A KICK BY EAR"}</small></button>
+        <button type="button" className={overrideArmed ? "transition-preview-grid-override armed" : "transition-preview-grid-override"} disabled={gridOverrideBusy} onClick={() => {
+          if (overrideArmed) { void confirmGridOverride(role); }
+          else setGridOverrideArmed((current) => ({ ...current, [role]: track.id }));
+        }}>{gridOverrideBusy ? "REFORMING…" : overrideArmed ? "CONFIRM GRID OVERRIDE" : "GRID OVERRIDE"}<small>{overrideArmed ? "REFORMS GRID TO PLAYHEAD · MATCHES THIS KICK TUNE-WIDE" : "SNAP OFF · PLACE PLAYHEAD ON A KICK BY EAR"}</small></button>
       </div>
       <div className="transition-preview-selection-length">
         <div className="transition-preview-beats"><b>OVERLAP</b>{ASSISTED_OVERLAP_BEAT_OPTIONS.map((beats) => <button type="button" key={beats} className={transitionPreview.beats === beats ? "active" : ""} onClick={() => setTransitionPreviewOverlapBeats(beats)}>{beats}</button>)}<small>BEATS · RE-PLACES THE FREE END FROM YOUR ANCHOR</small></div>
