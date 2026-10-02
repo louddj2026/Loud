@@ -369,10 +369,10 @@ test("Preview captures a moving mark from the last painted playhead rather than 
 });
 
 test("Preview START and FINISH mark once on pointer-down and once on keyboard key-down", () => {
-  for (const className of ["transition-preview-set-start", "transition-preview-set-finish"]) {
+  for (const className of ["transition-preview-set-start", "transition-preview-set-middle", "transition-preview-set-finish"]) {
     const buttonLine = boothSource.split(/\r?\n/).find((line) => line.includes("className={`" + className + " ")) ?? "";
-    assert.match(buttonLine, /onPointerDown=\{\(event\) => markTransitionPreviewWindowFromPointer\(event, role, "(?:start|end)"\)\}/);
-    assert.match(buttonLine, /onKeyDown=\{\(event\) => markTransitionPreviewWindowFromKeyboard\(event, role, "(?:start|end)"\)\}/);
+    assert.match(buttonLine, /onPointerDown=\{\(event\) => markTransitionPreviewWindowFromPointer\(event, role, "(?:start|middle|end)"\)\}/);
+    assert.match(buttonLine, /onKeyDown=\{\(event\) => markTransitionPreviewWindowFromKeyboard\(event, role, "(?:start|middle|end)"\)\}/);
     assert.doesNotMatch(buttonLine, /onClick=/, `${className} must not mark again at pointer release`);
     assert.equal((buttonLine.match(/markTransitionPreviewWindowFromPointer/g) ?? []).length, 1);
     assert.equal((buttonLine.match(/markTransitionPreviewWindowFromKeyboard/g) ?? []).length, 1);
@@ -483,7 +483,7 @@ test("changing Preview overlap beats re-places the free end and never the anchor
   // exactly why this handler MUST rebuild the windows - and must feed the
   // derivation the anchor's own time, so the marked edge cannot move.
   const beatHandler = boothSource.match(/const setTransitionPreviewOverlapBeats = \(beats: AssistedOverlapBeats\) => \{[\s\S]*?(?=  const updateTransitionPreviewAutomation)/)?.[0] ?? "";
-  assert.match(beatHandler, /const anchorTime = anchor === "start" \? window\.start : window\.end;/);
+  assert.match(beatHandler, /const anchorTime = anchor === "middle" \? \(role === "outgoing" \? current\.outgoingMiddleAnchor : current\.incomingMiddleAnchor\) : anchor === "start" \? window\.start : window\.end;/);
   assert.match(beatHandler, /deriveTransitionPreviewWindowFor\(current, role, anchor, anchorTime, beats\)/);
   assert.match(beatHandler, /if \(!derived\.ok\) return \{ window/);
   assert.match(boothSource, /const incomingRate = transitionPreviewTempoRate\(preview\.outgoingWindow, preview\.incomingWindow\)/);

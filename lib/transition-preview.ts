@@ -184,7 +184,7 @@ export function transitionPreviewCanCommit(
 }
 
 /** Which edge of a window the DJ marked. The other edge is derived from it. */
-export type TransitionPreviewAnchorEdge = "start" | "end";
+export type TransitionPreviewAnchorEdge = "start" | "middle" | "end";
 
 export type TransitionPreviewGridBeat2 = { time: number; attackTime?: number | null };
 
@@ -226,6 +226,22 @@ export function deriveTransitionPreviewWindow(input: {
   let anchorIndex = 0;
   for (let index = 1; index < beats.length; index += 1) {
     if (Math.abs(beats[index].time - anchorTime) < Math.abs(beats[anchorIndex].time - anchorTime)) anchorIndex = index;
+  }
+  if (anchorEdge === "middle") {
+    // Count half the chosen beats either side; keep the literal mark when snap
+    // is off, without shifting an incoming start independently onto an attack.
+    const first = anchorIndex - windowBeats / 2;
+    const last = anchorIndex + windowBeats / 2;
+    if (first < 0 || last > beats.length - 1) return { ok: false, reason: "half the overlap does not fit on each side of the middle" };
+    const timeAt = (index: number) => {
+      const low = Math.floor(index), high = Math.ceil(index);
+      return beats[low].time + (beats[high].time - beats[low].time) * (index - low);
+    };
+    const offset = anchorTime - beats[anchorIndex].time;
+    const start = timeAt(first) + offset;
+    const end = timeAt(last) + offset;
+    if (!(start >= 0 && end > start && end <= beats[beats.length - 1].time)) return { ok: false, reason: "the centred overlap runs outside this tune's grid" };
+    return { ok: true, window: { start, end }, anchorTime, derivedTime: end, landedOnAttack: false };
   }
   const derivedIndex = anchorEdge === "start" ? anchorIndex + windowBeats : anchorIndex - windowBeats;
   if (derivedIndex < 0) return { ok: false, reason: `${windowBeats} beats runs off the front of the tune` };

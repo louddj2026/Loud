@@ -48,7 +48,7 @@ Allow several GB for the installed packages, models and caches, plus room for yo
 
 Private Preview gives you a separate place to try a transition between two tracks before applying it to the live decks. It uses its own playheads, so seeking, replaying and auditioning in Preview does not move the live decks or stop their playback.
 
-Choose your mix-out and mix-in windows, listen to the overlap, and work on the timing and EQ/bass handover. You can go back and try it again without repeatedly resetting the live decks. Applying the mix placements saves your choices without seeking the live players or rewriting the analysed beat/bar grid. With no bass switch marker selected, the outgoing track keeps its bass for the entire overlap; the bass kills swap at the end of the last beat. Selected bass markers keep their existing handover timing, and manual bass overrides remain available.
+Choose your mix-out and mix-in windows, listen to the overlap, and work on the timing and EQ/bass handover. Start, Middle and Finish buttons can place each window: Middle puts half the selected beat count on either side of the playhead and keeps that mark anchored when changing the length. You can go back and try it again without repeatedly resetting the live decks. Applying the mix placements saves your choices without seeking the live players or rewriting the analysed beat/bar grid. With no bass switch marker selected, the outgoing track keeps its bass for the entire overlap; the bass kills swap at the end of the last beat. Selected bass markers keep their existing handover timing, and manual bass overrides remain available.
 
 What you hear depends on your audio setup:
 

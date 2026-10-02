@@ -59,3 +59,10 @@ No physical DJ interface/controller was available for end-to-end validation. Pro
 - Three new behavioural tests cover the exit boundary across eight overlap lengths, clearing/saving/restoring/resizing, and preservation of selected/legacy cues. All 14 bass-focused tests pass.
 - Full suite: 552 tests, 515 passed, 36 pre-existing failures, one skipped. Failure names are unchanged. Production webpack build and TypeScript checks pass in the isolated checkout.
 - The live local booth is deliberately not updated while the DJ is mixing.
+
+## Middle mix-window anchors (2 October 2026)
+
+- Added Middle Mix Out / Middle Mix In between the respective Start and Finish buttons. Half the selected beat count is placed on each side using the track's beat grid, including tempo changes. The middle mark remains anchored when resizing, and private cue undo retains it.
+- Out-of-range windows are refused without changing the existing marks. Pointer-down and keyboard activation use the same captured playhead path as Start/Finish.
+- Four new behavioural tests pass; the full suite reports 556 tests, 519 passed, 36 unchanged known failures and one skip. Build and TypeScript passed. Isolated production pages returned HTTP 200.
+- Isolated rendering confirmed button order, equal widths and unclipped text. The playing local booth remains unchanged pending the DJ's later rollout request.

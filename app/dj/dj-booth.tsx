@@ -141,6 +141,8 @@ type TransitionPreviewCueSnapshot = {
   incomingWindow: TransitionPreviewWindow;
   outgoingAnchor: TransitionPreviewAnchorEdge | null;
   incomingAnchor: TransitionPreviewAnchorEdge | null;
+  outgoingMiddleAnchor?: number;
+  incomingMiddleAnchor?: number;
   configurationOpen: boolean;
   selectionRole: TransitionPreviewRole | null;
 };
@@ -172,6 +174,8 @@ type TransitionPreviewState = {
   /** The edge the DJ marked; the other edge is placed by the beat count. */
   outgoingAnchor: TransitionPreviewAnchorEdge | null;
   incomingAnchor: TransitionPreviewAnchorEdge | null;
+  outgoingMiddleAnchor?: number;
+  incomingMiddleAnchor?: number;
   outgoingTime: number;
   incomingTime: number;
   /**
@@ -8292,7 +8296,7 @@ export default function DjBooth() {
     windowBeats,
     startPrefersAttack: role === "incoming",
   });
-  const markTransitionPreviewWindow = (role: TransitionPreviewRole, edge: "start" | "end", capturedTime?: number) => {
+  const markTransitionPreviewWindow = (role: TransitionPreviewRole, edge: TransitionPreviewAnchorEdge, capturedTime?: number) => {
     const preview = transitionPreview;
     if (!preview) return;
     const stateTime = role === "outgoing" ? preview.outgoingTime : preview.incomingTime;
@@ -8325,25 +8329,28 @@ export default function DjBooth() {
         ...current,
         [key]: derived.window,
         [anchorKey]: edge,
+        [role === "outgoing" ? "outgoingMiddleAnchor" : "incomingMiddleAnchor"]: edge === "middle" ? derived.anchorTime : undefined,
         cueHistory: [...current.cueHistory, {
           beats: current.beats,
           outgoingWindow: current.outgoingWindow,
           incomingWindow: current.incomingWindow,
           outgoingAnchor: current.outgoingAnchor,
           incomingAnchor: current.incomingAnchor,
+          outgoingMiddleAnchor: current.outgoingMiddleAnchor,
+          incomingMiddleAnchor: current.incomingMiddleAnchor,
           configurationOpen: current.configurationOpen,
           selectionRole: current.selectionRole,
         }],
-        status: `${roleLabel} ${edge === "start" ? "START" : "FINISH"} anchored at ${preciseTimeLabel(derived.anchorTime)} · ${preview.beats} beats puts the other end at ${preciseTimeLabel(derived.derivedTime)} · ${windowBpm.toFixed(3)} BPM${derived.landedOnAttack ? " · entry on the kick" : ""} · try other lengths, nothing moves on until you say so`,
+        status: `${roleLabel} ${edge === "start" ? "START" : edge === "middle" ? "MIDDLE" : "FINISH"} anchored at ${preciseTimeLabel(derived.anchorTime)} · ${edge === "middle" ? `${preview.beats / 2} beats each side · ${preciseTimeLabel(derived.window.start!)} to ${preciseTimeLabel(derived.window.end!)}` : `${preview.beats} beats puts the other end at ${preciseTimeLabel(derived.derivedTime)}`} · ${windowBpm.toFixed(3)} BPM${derived.landedOnAttack ? " · entry on the kick" : ""} · try other lengths, nothing moves on until you say so`,
       };
     });
   };
-  const markTransitionPreviewWindowFromPointer = (event: React.PointerEvent<HTMLButtonElement>, role: TransitionPreviewRole, edge: "start" | "end") => {
+  const markTransitionPreviewWindowFromPointer = (event: React.PointerEvent<HTMLButtonElement>, role: TransitionPreviewRole, edge: TransitionPreviewAnchorEdge) => {
     if (!event.isPrimary || event.button !== 0) return;
     event.preventDefault();
     markTransitionPreviewWindow(role, edge, captureTransitionPreviewMarkTime(role));
   };
-  const markTransitionPreviewWindowFromKeyboard = (event: React.KeyboardEvent<HTMLButtonElement>, role: TransitionPreviewRole, edge: "start" | "end") => {
+  const markTransitionPreviewWindowFromKeyboard = (event: React.KeyboardEvent<HTMLButtonElement>, role: TransitionPreviewRole, edge: TransitionPreviewAnchorEdge) => {
     if (event.repeat || event.key !== " " && event.key !== "Enter") return;
     event.preventDefault();
     event.stopPropagation();
@@ -8696,6 +8703,8 @@ export default function DjBooth() {
         incomingWindow: current.incomingWindow,
         outgoingAnchor: current.outgoingAnchor,
         incomingAnchor: current.incomingAnchor,
+        outgoingMiddleAnchor: current.outgoingMiddleAnchor,
+        incomingMiddleAnchor: current.incomingMiddleAnchor,
         configurationOpen: current.configurationOpen,
         selectionRole: current.selectionRole,
       }],
@@ -8720,8 +8729,8 @@ export default function DjBooth() {
         const anchor = role === "outgoing" ? current.outgoingAnchor : current.incomingAnchor;
         const window = role === "outgoing" ? current.outgoingWindow : current.incomingWindow;
         if (!anchor) return { window, note: null as string | null };
-        const anchorTime = anchor === "start" ? window.start : window.end;
-        if (anchorTime === null) return { window, note: null };
+        const anchorTime = anchor === "middle" ? (role === "outgoing" ? current.outgoingMiddleAnchor : current.incomingMiddleAnchor) : anchor === "start" ? window.start : window.end;
+        if (anchorTime == null) return { window, note: null };
         const derived = deriveTransitionPreviewWindowFor(current, role, anchor, anchorTime, beats);
         if (!derived.ok) return { window, note: `${role === "outgoing" ? "MIX OUT" : "MIX IN"} kept its old length - ${derived.reason}` };
         return { window: derived.window, note: null };
@@ -8746,6 +8755,8 @@ export default function DjBooth() {
           incomingWindow: current.incomingWindow,
           outgoingAnchor: current.outgoingAnchor,
           incomingAnchor: current.incomingAnchor,
+          outgoingMiddleAnchor: current.outgoingMiddleAnchor,
+          incomingMiddleAnchor: current.incomingMiddleAnchor,
           configurationOpen: current.configurationOpen,
           selectionRole: current.selectionRole,
         }],
@@ -9884,6 +9895,7 @@ export default function DjBooth() {
         <button type="button" aria-pressed={transitionPreview.audition === role} aria-label={transitionPreview.audition === role ? `Pause ${previewLabel} preview` : `Play ${previewLabel} preview`} onClick={() => void playTransitionPreviewTrack(role).catch((error: unknown) => setTransitionPreview((current) => current ? { ...current, status: error instanceof Error ? error.message : "Private player could not start" } : current))}><span className="cdj-icon-bezel">{transitionPreview.audition === role ? <PauseTransportIcon /> : <PlayTransportIcon />}</span><small>PREVIEW MONITOR</small></button>
         {transitionPreviewCueButton(role)}
         <button type="button" className={`transition-preview-set-start ${anchorEdge === "start" ? "anchored" : ""}`} onPointerDown={(event) => markTransitionPreviewWindowFromPointer(event, role, "start")} onKeyDown={(event) => markTransitionPreviewWindowFromKeyboard(event, role, "start")}>{outgoing ? "START MIX OUT" : "START MIX IN"}<small>{anchorEdge === "start" ? "ANCHOR · AT WHITE PLAYHEAD" : `AT PLAYHEAD · +${transitionPreview.beats} BEATS SETS FINISH`}</small></button>
+        <button type="button" className={`transition-preview-set-middle ${anchorEdge === "middle" ? "anchored" : ""}`} onPointerDown={(event) => markTransitionPreviewWindowFromPointer(event, role, "middle")} onKeyDown={(event) => markTransitionPreviewWindowFromKeyboard(event, role, "middle")}>{outgoing ? "MIDDLE MIX OUT" : "MIDDLE MIX IN"}<small>{anchorEdge === "middle" ? "MIDDLE ANCHORED · AT WHITE PLAYHEAD" : `AT PLAYHEAD · ${transitionPreview.beats / 2} BEATS EACH SIDE`}</small></button>
         <button type="button" className={`transition-preview-set-finish ${anchorEdge === "end" ? "anchored" : ""}`} onPointerDown={(event) => markTransitionPreviewWindowFromPointer(event, role, "end")} onKeyDown={(event) => markTransitionPreviewWindowFromKeyboard(event, role, "end")}>{outgoing ? "FINISH MIX OUT" : "FINISH MIX IN"}<small>{anchorEdge === "end" ? "ANCHOR · AT WHITE PLAYHEAD" : `AT PLAYHEAD · ${outgoing ? `−${transitionPreview.beats} BEATS SETS START` : `START LANDS ON THE KICK −${transitionPreview.beats} BEATS BACK`}`}</small></button>
         <button type="button" className={gridOverrideArmed[role] ? "transition-preview-grid-override armed" : "transition-preview-grid-override"} disabled={gridOverrideBusy} onClick={() => {
           if (gridOverrideArmed[role]) { void confirmGridOverride(role); }
