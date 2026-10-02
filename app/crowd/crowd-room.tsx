@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { createListenerWakeLock, type ListenerWakeState } from "../../lib/listener-wake-lock";
 import { useEffect, useRef, useState } from "react";
 import { reportClientDiagnostic } from "../../lib/client-diagnostics-client";
 import { BOOTH_VISUAL_DIRECTIONS, type BoothVisualDirection } from "../dj/dj-ui-config";
@@ -48,6 +49,9 @@ export default function CrowdRoom() {
   const [connectionDetail, setConnectionDetail] = useState("");
   const [reactionStatus, setReactionStatus] = useState("Tap a reaction. Let the DJ feel the room.");
   const [copyState, setCopyState] = useState<CopyState>("idle");
+  const [wakeState, setWakeState] = useState<ListenerWakeState>("off");
+  const playbackActions = useRef({ play: () => {}, pause: () => {}, recover: () => {} });
+  const recoveryInFlight = useRef(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const playbackContextRef = useRef<AudioContext | null>(null);
   const fallbackPlaybackRef = useRef<MediaStreamAudioSourceNode | null>(null);
@@ -75,6 +79,9 @@ export default function CrowdRoom() {
       context = new AudioContextConstructor();
       playbackContextRef.current = context;
     }
+    context.onstatechange = () => {
+      if (context.state !== "running" && wantsAudioRef.current && fallbackPlaybackRef.current) playbackActions.current.recover();
+    };
     if (context.state !== "running") await context.resume();
     // iOS Safari only grants audio output while handling the user's tap. A
     // silent frame consumes that grant now, before the remote stream exists.
@@ -92,6 +99,7 @@ export default function CrowdRoom() {
       if (!mayResume) return false;
       try { await context.resume(); } catch { return false; }
     }
+    if (!wantsAudioRef.current) return false;
     disconnectFallbackPlayback();
     const source = context.createMediaStreamSource(stream);
     source.connect(context.destination);
@@ -101,12 +109,14 @@ export default function CrowdRoom() {
   const playReceivedAudio = async (stream: MediaStream, mayResumeFallback = false) => {
     const audio = audioRef.current;
     if (!audio) return false;
-    audio.srcObject = stream;
+    if (audio.srcObject !== stream) audio.srcObject = stream;
+    if (!wantsAudioRef.current) return false;
     audio.defaultMuted = false;
     audio.muted = false;
     audio.volume = 1;
     try {
       await audio.play();
+      if (!wantsAudioRef.current) { audio.pause(); return false; }
       if (!audio.paused) {
         disconnectFallbackPlayback();
         setListening("live");
@@ -294,8 +304,12 @@ export default function CrowdRoom() {
       } catch (error) {
         consecutiveFailures += 1;
         const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-        if (wantsAudioRef.current) setListening("waiting");
-        if (wantsAudioRef.current) setConnectionDetail(`Phone audio setup stopped: ${message}`);
+        // Signalling can be throttled in the background while WebRTC audio is healthy.
+        const audioPlaying = Boolean(audioRef.current && !audioRef.current.paused) || Boolean(fallbackPlaybackRef.current && playbackContextRef.current?.state === "running");
+        if (wantsAudioRef.current && !audioPlaying) {
+          setListening("waiting");
+          setConnectionDetail(`Phone audio setup stopped: ${message}`);
+        }
         void postCrowdEvent({ type: "crowd-error", clientId, targetId: "dj", data: { message } }).catch(() => undefined);
       } finally {
         if (!cancelled) timer = setTimeout(poll, crowdPollRetryDelay(consecutiveFailures));
@@ -339,7 +353,7 @@ export default function CrowdRoom() {
   // main button is disabled, so a second tap feels dead. Once the stream is
   // connected, ANY press on the page is the play gesture.
   useEffect(() => {
-    if (listening !== "ready") return;
+    if (listening !== "ready" || !wantsAudio) return;
     const resume = () => {
       const stream = audioRef.current?.srcObject;
       if (!(stream instanceof MediaStream)) return;
@@ -349,44 +363,64 @@ export default function CrowdRoom() {
     };
     document.addEventListener("pointerdown", resume);
     return () => document.removeEventListener("pointerdown", resume);
-  }, [listening]);
+  }, [listening, wantsAudio]);
 
-  // DJ, 27 Aug 2026: the laptop's screensaver/sleep kept killing the feed.
-  // While listening is live, hold a screen wake lock where the API exists
-  // (secure contexts), and run the tiny-live-video fallback everywhere else —
-  // the LAN http origin has no wakeLock, but a playing muted video keeps the
-  // display awake on most platforms. Everything releases when listening stops.
+  // A real wake lock reports whether the screen is actually protected. Hidden
+  // pages lose it by browser policy; returning reacquires it without touching audio.
   useEffect(() => {
-    if (listening !== "live") return;
-    let lock: { release: () => Promise<void> } | null = null;
-    const acquire = () => {
-      const wakeLock = (navigator as Navigator & { wakeLock?: { request: (type: "screen") => Promise<{ release: () => Promise<void> }> } }).wakeLock;
-      if (!wakeLock) return;
-      wakeLock.request("screen").then((granted) => { lock = granted; }).catch(() => undefined);
-    };
-    acquire();
-    const reacquire = () => { if (document.visibilityState === "visible") acquire(); };
-    document.addEventListener("visibilitychange", reacquire);
-    const canvas = document.createElement("canvas");
-    canvas.width = 2;
-    canvas.height = 2;
-    const paint = canvas.getContext("2d");
-    const painter = window.setInterval(() => { paint?.fillRect(0, 0, 2, 2); }, 15000);
-    const keepAwake = document.createElement("video");
-    keepAwake.muted = true;
-    keepAwake.playsInline = true;
-    keepAwake.srcObject = canvas.captureStream(1);
-    keepAwake.style.cssText = "position:fixed;width:1px;height:1px;opacity:0;pointer-events:none";
-    document.body.appendChild(keepAwake);
-    void keepAwake.play().catch(() => undefined);
+    const controller = createListenerWakeLock({
+      request: navigator.wakeLock ? () => navigator.wakeLock.request("screen") : undefined,
+      visible: () => document.visibilityState === "visible",
+      report: setWakeState,
+    });
+    controller.setEnabled(wantsAudio && listening === "live");
+    const refresh = () => void controller.refresh();
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("pageshow", refresh);
+    document.addEventListener("pointerdown", refresh);
     return () => {
-      document.removeEventListener("visibilitychange", reacquire);
-      window.clearInterval(painter);
-      keepAwake.pause();
-      keepAwake.remove();
-      void lock?.release().catch(() => undefined);
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("pageshow", refresh);
+      document.removeEventListener("pointerdown", refresh);
+      controller.dispose();
     };
-  }, [listening]);
+  }, [wantsAudio, listening]);
+
+  // Switching tabs never disconnects or pauses the receiver. If the browser
+  // interrupted it, make one recovery attempt per lifecycle event, retaining
+  // the user's explicit pause choice. OS media controls use that same choice.
+  useEffect(() => {
+    const recover = () => playbackActions.current.recover();
+    document.addEventListener("visibilitychange", recover);
+    window.addEventListener("pageshow", recover);
+    window.addEventListener("online", recover);
+    const session = navigator.mediaSession;
+    if (session) {
+      if (typeof MediaMetadata !== "undefined") session.metadata = new MediaMetadata({ title: "LoudLink · Live mix", artist: "Loud" });
+      for (const [action, handler] of [
+        ["play", () => playbackActions.current.play()],
+        ["pause", () => playbackActions.current.pause()],
+        ["stop", () => playbackActions.current.pause()],
+      ] as const) {
+        try { session.setActionHandler(action, handler); } catch { /* Unsupported action. */ }
+      }
+    }
+    return () => {
+      document.removeEventListener("visibilitychange", recover);
+      window.removeEventListener("pageshow", recover);
+      window.removeEventListener("online", recover);
+      if (session) {
+        for (const action of ["play", "pause", "stop"] as const) {
+          try { session.setActionHandler(action, null); } catch { /* Unsupported action. */ }
+        }
+        session.metadata = null;
+        session.playbackState = "none";
+      }
+    };
+  }, []);
+  useEffect(() => {
+    if (navigator.mediaSession) navigator.mediaSession.playbackState = listening === "live" && wantsAudio ? "playing" : wantsAudio || listening === "ready" ? "paused" : "none";
+  }, [listening, wantsAudio]);
 
   const startListening = async () => {
     reportClientDiagnostic("crowd-page-listen-click", {
@@ -429,17 +463,42 @@ export default function CrowdRoom() {
       listenRequestInFlight.current = false;
     }
   };
-  const toggleListening = async () => {
+  const pauseListening = () => {
+    wantsAudioRef.current = false;
+    setWantsAudio(false);
+    disconnectFallbackPlayback();
+    audioRef.current?.pause();
+    void playbackContextRef.current?.suspend().catch(() => undefined);
+    setListening("ready");
+    setConnectionDetail("Audio is connected · playback paused");
+  };
+  const recoverPlayback = async () => {
+    if (!wantsAudioRef.current || recoveryInFlight.current) return;
     const audio = audioRef.current;
-    if (listening === "live" && audio) {
-      disconnectFallbackPlayback();
-      audio.pause();
-      void playbackContextRef.current?.suspend().catch(() => undefined);
-      setListening("ready");
-      setConnectionDetail("Audio is connected · playback paused");
-      return;
-    }
-    await startListening();
+    const stream = audio?.srcObject;
+    if (!audio || !(stream instanceof MediaStream) || !stream.active) return;
+    if (!audio.paused && !fallbackPlaybackRef.current) return;
+    recoveryInFlight.current = true;
+    try {
+      // Prefer the native media element: mobile OS background media support
+      // is stronger than an AudioContext-only path. Never create a second feed.
+      await playReceivedAudio(stream, true);
+      if (!wantsAudioRef.current) pauseListening();
+    } catch {
+      if (wantsAudioRef.current) {
+        setListening("ready");
+        setConnectionDetail("Browser interrupted playback · tap Play Mix to resume");
+      }
+    } finally { recoveryInFlight.current = false; }
+  };
+  playbackActions.current = {
+    play: () => { void startListening(); },
+    pause: pauseListening,
+    recover: () => { void recoverPlayback(); },
+  };
+  const toggleListening = async () => {
+    if (listening === "live") pauseListening();
+    else await startListening();
   };
 
   const react = async (emoji: string) => {
@@ -479,6 +538,7 @@ export default function CrowdRoom() {
     setCopyState(copied ? "copied" : "error");
   };
   const handleAudioPlay = () => {
+    if (!wantsAudioRef.current) { audioRef.current?.pause(); return; }
     disconnectFallbackPlayback();
     setListening("live");
     setConnectionDetail("Local audio path connected · playback started");
@@ -486,6 +546,10 @@ export default function CrowdRoom() {
   const handleAudioPause = () => {
     if (!wantsAudioRef.current) return;
     if (fallbackPlaybackRef.current) return;
+    if (audioRef.current?.srcObject instanceof MediaStream && audioRef.current.srcObject.active && !audioRef.current.ended) {
+      void recoverPlayback();
+      return;
+    }
     setListening(audioRef.current?.srcObject ? "ready" : "waiting");
     setConnectionDetail(audioRef.current?.srcObject
       ? "Audio is connected · playback paused"
@@ -515,7 +579,8 @@ export default function CrowdRoom() {
       <div className="crowd-live-orb" aria-hidden="true" />
       <div aria-live="polite"><small>01 / LIVE MIX</small><b>{statusCopy}</b><span>{connectionDetail || (listening === "live" ? "You’re listening to the booth’s live mix" : "The DJ booth needs to be open to join the mix")}</span></div>
       <button type="button" className={listening === "live" ? "crowd-play active" : "crowd-play"} disabled={!clientId || listening === "connecting"} onClick={() => void toggleListening()}><span className="cdj-icon-bezel">{listening === "live" ? <PauseTransportIcon /> : <PlayTransportIcon />}</span><b>{listening === "live" ? "PAUSE MIX" : listening === "connecting" ? "CONNECTING…" : listening === "ready" ? "PLAY MIX" : "JOIN THE MIX"}</b></button>
-      <audio ref={audioRef} autoPlay playsInline controls aria-label="Loud live DJ mix" onPlay={handleAudioPlay} onPause={handleAudioPause} onEnded={handleAudioPause} onEmptied={handleAudioPause} />
+      <audio ref={audioRef} autoPlay playsInline aria-label="Loud live DJ mix" onPlay={handleAudioPlay} onPause={handleAudioPause} onEnded={handleAudioPause} onEmptied={handleAudioPause} />
+      {wantsAudio && listening === "live" && <p role="status">{wakeState === "held" ? "Screen kept awake while LoudLink is visible · audio continues when you switch tabs" : wakeState === "background" ? "Background audio active · screen wake protection returns when you reopen LoudLink" : "Audio continues when you switch tabs · screen wake protection unavailable in this browser or connection"}</p>}
     </section>
     <section className="crowd-feedback">
       <div><p className="eyebrow">02 / REACTION DECK</p><h3>Let the booth feel it.</h3><span aria-live="polite">{reactionStatus}</span></div>

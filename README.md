@@ -61,6 +61,12 @@ With Snap to Grid enabled, Preview snaps to the beat lines it displays. Grid Ove
 
 Load opens for paused decks even when an old transition is armed. Choosing a replacement disarms the affected transition while other decks keep playing; cancelling the picker leaves it alone. Playing decks are protected from replacement.
 
+## LoudLink background listening
+
+After joining the mix, LoudLink keeps its receiver connected when you switch tabs or apps. It registers system media play/pause controls and tries to recover interrupted playback without undoing an explicit Pause. Keep the listener tab open; closing it or navigating away ends the connection. Mobile operating systems can still suspend a browser or interrupt audio, so background/locked-screen playback is not guaranteed on every device.
+
+While the mix is playing and LoudLink is visible, it requests a screen wake lock to prevent automatic dimming or locking. The listener shows whether protection was granted. The browser releases this lock when LoudLink is hidden; LoudLink requests it again when you return. Screen wake locks require a supported browser and a secure origin (HTTPS, or localhost on the same computer). A phone visiting an ordinary `http://` LAN address cannot use that API. On such devices, adjust the device's screen timeout if continuous screen-on operation is needed. LoudLink does not change device power settings or claim to prevent system sleep in the background.
+
 ## LoudLink and privacy
 
 The QR code is generated locally from the current user's computer and network. No developer address is built into it, and the QR image is never sent to an external QR service. A local QR contains that computer's private LAN address and port so another device on the same network can connect; anyone who sees or scans the QR can read that address. Avoid including a live connection QR in public screenshots.
