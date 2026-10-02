@@ -129,7 +129,7 @@ test("booth waveforms omit temporary helper labels but keep their controls", () 
 });
 
 test("Preview uses the selected coordinates and existing grid without projecting another WAV timeline", () => {
-  const playMixSource = boothSource.match(/const playTransitionPreviewMix = async \(\) => \{[\s\S]*?(?=  const readDeckMeter)/)?.[0] ?? "";
+  const playMixSource = boothSource.match(/const playTransitionPreviewMix = async \([^\n]*\) => \{[\s\S]*?(?=  const readDeckMeter)/)?.[0] ?? "";
   assert.match(playMixSource, /const outgoingStart = preview\.outgoingWindow\.start!/);
   assert.match(playMixSource, /const incomingStart = preview\.incomingWindow\.start!/);
   assert.match(playMixSource, /const outgoingBpm = resolvedBpmAt\(preview\.outgoingAnalysis, outgoingStart\)/);
@@ -189,7 +189,7 @@ test("a safety-muted live deck cannot mute the private crowd audition", () => {
 });
 
 test("Preview Mix cancels stale zero-gain ramps before starting both private players", () => {
-  const mixStart = boothSource.indexOf("const playTransitionPreviewMix = async () =>");
+  const mixStart = boothSource.indexOf("const playTransitionPreviewMix = async (");
   const playStart = boothSource.indexOf("await outgoingAudio.play()", mixStart);
   const startupSource = boothSource.slice(mixStart, playStart);
   assert.ok(mixStart >= 0 && playStart > mixStart);
@@ -499,7 +499,7 @@ test("Preview display and live automation share the confirmed-window tempo autho
 });
 
 test("Preview Mix uses the 7 August hard cue alignment and gentle preroll nudge", () => {
-  const playMixSource = boothSource.match(/const playTransitionPreviewMix = async \(\) => \{[\s\S]*?(?=  const readDeckMeter)/)?.[0] ?? "";
+  const playMixSource = boothSource.match(/const playTransitionPreviewMix = async \([^\n]*\) => \{[\s\S]*?(?=  const readDeckMeter)/)?.[0] ?? "";
   const mixOpenSource = playMixSource.match(/if \(!mixOpened && current\.currentTime >= outgoingStart - \.005\) \{[\s\S]*?(?=      if \(mixOpened && !outgoingCut\))/)?.[0] ?? "";
   const audibleOpenAt = mixOpenSource.indexOf('setTransitionPreviewOutput("incoming", overlapVolume)');
   assert.ok(audibleOpenAt >= 0, "the private gain should open after the cue is hard-aligned");
@@ -517,7 +517,7 @@ test("Preview Mix button states the beat count that will actually run", () => {
 });
 
 test("Preview uses source BPMs for preroll but confirmed grid spans for its one tempo ratio", () => {
-  const playMixSource = boothSource.match(/const playTransitionPreviewMix = async \(\) => \{[\s\S]*?(?=  const readDeckMeter)/)?.[0] ?? "";
+  const playMixSource = boothSource.match(/const playTransitionPreviewMix = async \([^\n]*\) => \{[\s\S]*?(?=  const readDeckMeter)/)?.[0] ?? "";
   assert.match(playMixSource, /const outgoingBpm = resolvedBpmAt\(preview\.outgoingAnalysis, outgoingStart\)/);
   assert.match(playMixSource, /const incomingBpm = resolvedBpmAt\(preview\.incomingAnalysis, incomingStart\)/);
   assert.match(playMixSource, /outgoingAudio\.playbackRate = 1/);
@@ -546,7 +546,7 @@ test("a confirmed window is the grid authority: no snap-to-old-grid, no disagree
 });
 
 test("Preview counts its run-up in the user's window beats, not the analysed grid", () => {
-  const playMixSource = boothSource.match(/const playTransitionPreviewMix = async \(\) => \{[\s\S]*?(?=  const readDeckMeter)/)?.[0] ?? "";
+  const playMixSource = boothSource.match(/const playTransitionPreviewMix = async \([^\n]*\) => \{[\s\S]*?(?=  const readDeckMeter)/)?.[0] ?? "";
   assert.match(playMixSource, /const outgoingBeatSeconds = \(outgoingEnd - outgoingStart\) \/ Math\.max\(1, preview\.beats\);/);
   assert.match(playMixSource, /const incomingBeatSeconds = \(incomingEnd - incomingStart\) \/ Math\.max\(1, preview\.beats\);/);
   assert.match(playMixSource, /const runwayStart = Math\.max\(0, outgoingStart - TRANSITION_PREVIEW_LEAD_BEATS \* outgoingBeatSeconds\);/);

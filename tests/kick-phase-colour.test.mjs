@@ -28,7 +28,7 @@ test("a reading with no direction never implies one", () => {
 
 test("phase colour is diagnosis only and never reaches tempo", async () => {
   const booth = await readFile(new URL("../app/dj/dj-booth.tsx", import.meta.url), "utf8");
-  const mixSource = booth.match(/const playTransitionPreviewMix = async \(\) => \{[\s\S]*?\n  \};/)?.[0] ?? "";
+  const mixSource = booth.match(/const playTransitionPreviewMix = async \([^\n]*\) => \{[\s\S]*?\n  \};/)?.[0] ?? "";
   assert.ok(mixSource, "preview mix source should be readable");
   // Once the incoming tune is audible, the span-locked ratio is the only thing
   // permitted to set its rate. The gentle nudge is confined to the silent

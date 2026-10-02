@@ -38,7 +38,7 @@ test("manual window endpoints are readouts, not fake buttons", () => {
 test("transition preview uses private players and its independent preview-monitor bus", () => {
   const openPreviewSource = djSource.match(/const openTransitionPreview = \(\) => \{[\s\S]*?(?=  const closeTransitionPreview)/)?.[0] ?? "";
   const closePreviewSource = djSource.match(/const closeTransitionPreview = \(\) => \{[\s\S]*?(?=  const seekTransitionPreview)/)?.[0] ?? "";
-  const playMixSource = djSource.match(/const playTransitionPreviewMix = async \(\) => \{[\s\S]*?(?=  const readDeckMeter)/)?.[0] ?? "";
+  const playMixSource = djSource.match(/const playTransitionPreviewMix = async \([^\n]*\) => \{[\s\S]*?(?=  const readDeckMeter)/)?.[0] ?? "";
   assert.match(djSource, />PREVIEW<small>/);
   assert.match(djSource, /previewMonitorMaster\.current = audioContext\.createGain\(\)/);
   assert.match(djSource, /output\.connect\(previewMonitorOutput\)/);

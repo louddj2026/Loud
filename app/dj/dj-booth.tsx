@@ -41,6 +41,7 @@ import { bassOwnerAtBeat, bassOwnershipSegments, toggleBassSwapBeat } from "../.
 import { nextBassOverride, overriddenBassLow } from "../../lib/bass-kill";
 import { type PreviewDraft } from "../../lib/preview-draft";
 import { TRANSITION_PREVIEW_LEAD_BEATS, deriveTransitionPreviewWindow, type TransitionPreviewAnchorEdge, transitionPreviewGridBeats, transitionPreviewSnapTime, TRANSITION_PREVIEW_LIVE_ARM_GUARD_SECONDS, TRANSITION_PREVIEW_SILENT_PREROLL_BEATS, selectTransitionPreviewPair, transitionPreviewBeat, transitionPreviewCanCommit, transitionPreviewCrowdAuditionVolume, transitionPreviewLiveArmDecision, transitionPreviewMarkTime, transitionPreviewTempoRate, transitionPreviewWindowReady, type TransitionPreviewLiveRuntimeState, type TransitionPreviewWindow } from "../../lib/transition-preview";
+import { previewMixSeekPoint, seekAndPlayPreviewPair } from "../../lib/preview-paired-seek";
 import { PREVIEW_OPEN_SEEK_TOLERANCE_SECONDS, PREVIEW_OVERLAP_RESEEK_SECONDS, PREVIEW_OVERLAP_SAMPLE_EVERY_BEATS, previewOpenSeekDecision, previewOverlapDriftSummary, type PreviewOverlapSample } from "../../lib/preview-overlap-lock";
 import { FOCUS_WAVE_DRAG_REBASE_FRACTION, FOCUS_WAVE_GLIDE_STOP_WINDOWS_PER_SECOND, FOCUS_WAVE_THROW_WINDOW_MS, focusWaveBufferedRange, focusWaveChunkPlan, focusWaveDragThresholdPx, focusWaveDragTime, focusWaveGlideStep, focusWaveShouldRebase, focusWaveThrowLimit, focusWaveThrowVelocity, type FocusWaveThrowSample } from "../../lib/waveform-gesture";
 import { replicateBlockBeats, replicateMapTime, replicateOccurrences, replicateShiftSeconds, replicateSpliceAnalysis, replicateUnmapTime, type ReplicatePlan } from "../../lib/replicate";
@@ -3621,10 +3622,10 @@ export default function DjBooth() {
       status: "Private cue returned to its white playhead · live audio untouched",
     } : current);
   };
-  const playTransitionPreviewMix = async () => {
+  const playTransitionPreviewMix = async (jump?: { role: TransitionPreviewRole; time: number }) => {
     const preview = transitionPreview;
     if (!preview) return;
-    if (preview.audition === "mix") { stopTransitionPreviewPlayback("Transition preview paused"); return; }
+    if (preview.audition === "mix" && !jump) { stopTransitionPreviewPlayback("Transition preview paused"); return; }
     if (!transitionPreviewCanCommit(preview.outgoingWindow, preview.incomingWindow, preview.beats)) {
       setTransitionPreview((current) => current ? { ...current, status: "Set START and END on both private players before previewing the mix" } : current);
       return;
@@ -3638,6 +3639,10 @@ export default function DjBooth() {
     setTransitionPreview((current) => current ? { ...current, status: "Loading both private players on demandâ€¦" } : current);
     // 7 August timing baseline: the four selected coordinates stay literal.
     // Preview does not remap either full WAV or invent a second grid.
+    const seekPoint = jump ? previewMixSeekPoint({
+      role: jump.role, time: jump.time, outgoing: preview.outgoingWindow, incoming: preview.incomingWindow,
+      beats: preview.beats, snap: gridSnapCurrent.current,
+    }) : null;
     const outgoingStart = preview.outgoingWindow.start!;
     const outgoingEnd = preview.outgoingWindow.end!;
     const incomingStart = preview.incomingWindow.start!;
@@ -3652,9 +3657,12 @@ export default function DjBooth() {
     const runwayStart = Math.max(0, outgoingStart - TRANSITION_PREVIEW_LEAD_BEATS * outgoingBeatSeconds);
     const incomingLaunchAt = Math.max(0, outgoingStart - TRANSITION_PREVIEW_SILENT_PREROLL_BEATS * outgoingBeatSeconds);
     const incomingPrerollStart = Math.max(0, incomingStart - TRANSITION_PREVIEW_SILENT_PREROLL_BEATS * incomingBeatSeconds);
+    const outgoingSeekTime = seekPoint?.outgoingTime ?? runwayStart;
+    const incomingSeekTime = seekPoint?.incomingTime ?? incomingPrerollStart;
+    if (seekPoint) setTransitionPreview((current) => current ? { ...current, audition: "mix", status: "Seeking both private players together…" } : current);
     const [outgoingAudio, incomingAudio] = await Promise.all([
-      prepareTransitionPreviewAudio("outgoing", preview.outgoingTrack, runwayStart),
-      prepareTransitionPreviewAudio("incoming", preview.incomingTrack, incomingPrerollStart),
+      prepareTransitionPreviewAudio("outgoing", preview.outgoingTrack, outgoingSeekTime),
+      prepareTransitionPreviewAudio("incoming", preview.incomingTrack, incomingSeekTime),
     ]);
     if (token !== transitionPreviewCueToken.current) return;
     await Promise.all([
@@ -3662,8 +3670,8 @@ export default function DjBooth() {
       ensureTransitionPreviewGraph("incoming"),
     ]);
     if (token !== transitionPreviewCueToken.current) return;
-    outgoingAudio.currentTime = runwayStart;
-    incomingAudio.currentTime = incomingPrerollStart;
+    outgoingAudio.currentTime = outgoingSeekTime;
+    incomingAudio.currentTime = incomingSeekTime;
     const liveOutgoingAudio = activeAudio(preview.outgoingDeck);
     const liveOutgoingState = decksCurrent.current[preview.outgoingDeck];
     const followsLiveCrowdClock = liveOutgoingState.track?.id === preview.outgoingTrack.id
@@ -3687,7 +3695,7 @@ export default function DjBooth() {
     // logged for diagnosis, never shown as a warning against the user.
     const analysedRatio = outgoingBpm > 0 && incomingBpm > 0 ? outgoingBpm / incomingBpm : null;
     const spanGridMismatchPercent = analysedRatio === null ? null : (safeIncomingRate / analysedRatio - 1) * 100;
-    const opening = assistedAutomationAtBeat(preview.automation, 0);
+    const opening = assistedAutomationAtBeat(preview.automation, seekPoint?.beat ?? 0);
     // stopTransitionPreviewPlayback() leaves short zero-gain ramps queued on
     // reused Preview graphs. Re-prime every AudioParam through the cancelling
     // helper; assigning `.value` here would let that stale ramp mute Track A a
@@ -3696,7 +3704,7 @@ export default function DjBooth() {
       low: followsLiveCrowdClock ? liveOutgoingState.low : 0,
       mid: followsLiveCrowdClock ? liveOutgoingState.mid : 0,
       high: followsLiveCrowdClock ? liveOutgoingState.high : 0,
-      output: overlapVolume,
+      output: seekPoint ? 0 : overlapVolume,
     });
     setTransitionPreviewEq("incoming", {
       low: opening.incomingLow,
@@ -3704,11 +3712,22 @@ export default function DjBooth() {
       high: opening.incomingHigh,
       output: 0,
     });
-    await outgoingAudio.play();
-    if (token !== transitionPreviewCueToken.current) { outgoingAudio.pause(); incomingAudio.pause(); return; }
-    // Re-anchor after the private browser decoder starts. The incoming private
-    // player launches silently four beats before the overlap and opens only at X.
-    outgoingAudio.currentTime = runwayStart;
+    if (seekPoint) {
+      const started = await seekAndPlayPreviewPair({
+        outgoing: outgoingAudio, incoming: incomingAudio,
+        outgoingTime: outgoingSeekTime, incomingTime: incomingSeekTime,
+        isCurrent: () => token === transitionPreviewCueToken.current,
+      });
+      if (!started) return;
+      setTransitionPreviewEq("outgoing", { low: transitionPreviewBassKill.current.outgoing ? -60 : opening.outgoingLow, mid: opening.outgoingMid, high: opening.outgoingHigh, output: overlapVolume });
+      setTransitionPreviewEq("incoming", { low: transitionPreviewBassKill.current.incoming ? -60 : opening.incomingLow, mid: opening.incomingMid, high: opening.incomingHigh, output: overlapVolume });
+      reportCrowdLiveEvent("preview.mix.seek", { role: jump!.role, beat: seekPoint.beat, outgoingTime: outgoingSeekTime, incomingTime: incomingSeekTime });
+    } else {
+      await outgoingAudio.play();
+      if (token !== transitionPreviewCueToken.current) return;
+      // The ordinary Play Mix action retains its silent pre-roll.
+      outgoingAudio.currentTime = runwayStart;
+    }
     reportClientDiagnostic("transition-preview-mix-started", {
       outgoingTrackId: preview.outgoingTrack.id,
       incomingTrackId: preview.incomingTrack.id,
@@ -3750,10 +3769,10 @@ export default function DjBooth() {
       usedSafetyVolumeFallback: liveOutgoingState.volume <= .001,
       followsLiveCrowdClock,
     });
-    setTransitionPreview((current) => current ? { ...current, audition: "mix", outgoingTime: runwayStart, incomingTime: incomingPrerollStart, status: `Preview Mix running from ${TRANSITION_PREVIEW_LEAD_BEATS} of your ${preview.beats}-beat window beats before X · ${outgoingWindowBpm.toFixed(2)} → ${incomingWindowBpm.toFixed(2)} BPM · Preview Monitor` } : current);
-    let incomingLaunched = false;
+    setTransitionPreview((current) => current ? { ...current, audition: "mix", outgoingTime: outgoingSeekTime, incomingTime: incomingSeekTime, status: seekPoint ? `Preview Mix playing together from beat ${seekPoint.beat.toFixed(2)} · Preview Monitor` : `Preview Mix running from ${TRANSITION_PREVIEW_LEAD_BEATS} of your ${preview.beats}-beat window beats before X · ${outgoingWindowBpm.toFixed(2)} → ${incomingWindowBpm.toFixed(2)} BPM · Preview Monitor` } : current);
+    let incomingLaunched = Boolean(seekPoint);
     let incomingLaunchPending = false;
-    let mixOpened = false;
+    let mixOpened = Boolean(seekPoint);
     let outgoingCut = false;
     let bassSwapStarted = false;
     let bassSwapCompleted = false;
@@ -3765,7 +3784,7 @@ export default function DjBooth() {
     // nudge measure against the same literal outgoing→incoming mapping the
     // hard-align at X uses.
       let overlapResyncCount = 0;
-    let overlapNextSampleBeat = 0;
+    let overlapNextSampleBeat = seekPoint?.beat ?? 0;
     // Kick phase across the audible overlap, purely so the playheads can show
     // whether the incoming kicks are sitting early, late or together. It never
     // touches tempo: the span-locked ratio stays the only authority.
@@ -9988,7 +10007,7 @@ export default function DjBooth() {
         showReferenceGrid={false}
         role={role}
         phaseColourRef={role === "outgoing" ? transitionPreviewPhaseColourOutgoing : transitionPreviewPhaseColourIncoming}
-        onAudition={(time) => void playTransitionPreviewTrack(role, time, true).catch((error: unknown) => setTransitionPreview((current) => current ? { ...current, status: error instanceof Error ? error.message : "Private player could not start" } : current))}
+        onAudition={(time) => void (transitionPreviewCurrent.current?.audition === "mix" ? playTransitionPreviewMix({ role, time }) : playTransitionPreviewTrack(role, time, true)).catch((error: unknown) => stopTransitionPreviewPlayback(error instanceof Error ? error.message : "Private players could not seek together"))}
         rightSelect={{
           span: transitionPreview.replicateSelection?.role === role ? { start: transitionPreview.replicateSelection.start, end: transitionPreview.replicateSelection.end } : null,
           pending: transitionPreview.replicatePending?.role === role ? transitionPreview.replicatePending.time : null,

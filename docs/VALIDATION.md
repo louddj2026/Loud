@@ -75,3 +75,10 @@ No physical DJ interface/controller was available for end-to-end validation. Pro
 - Manual Load opens for a paused deck regardless of transition reservations or fader level. Only selecting a replacement cancels an affected transition; other deck transports and channel settings are not touched. Playback is checked again when loading, protecting a deck started while the picker was open.
 - Thirteen focused tests pass, including the existing four middle-anchor tests. Full suite: 565 tests, 528 pass, 36 unchanged pre-existing failures, one skipped. The short suite retains its six baseline failures. TypeScript and production webpack build pass. Isolated production /dj and /crowd both return HTTP 200.
 - Local rollout remains deferred to avoid interrupting the user's mix.
+
+
+## Paired Preview waveform seeking (2 October 2026)
+
+- During a running Preview Mix, clicks on either overlap waveform map to one overlap fraction and both literal source positions. Snapping is applied once in mix-beat space; the tempo ratio is unchanged. Solo waveform audition remains available outside a running mix.
+- Both private decoders must finish seeking before both play calls are issued together. The seek starts a fresh preview automation pass at that beat, preserving manual bass kills and allowing backward jumps after the outgoing cut. Existing preview tokens invalidate earlier pending seeks and cut callbacks.
+- Six behavioural tests pass: both waveform directions with unequal spans, forward/backward/endpoints, free placement and boundaries, unequal decoder readiness and simultaneous play calls, cancellation, and partial-start failure. Full suite: 571 tests, 534 pass, 36 unchanged baseline failures, one skip. TypeScript, production webpack build and isolated /dj HTTP smoke check pass.

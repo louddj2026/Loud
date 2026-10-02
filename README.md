@@ -55,7 +55,7 @@ What you hear depends on your audio setup:
 - **Computer audio / one shared output:** Preview temporarily replaces the local feed you hear. You can practise and prepare mixes without a DJ soundcard, but one output cannot carry an independent house mix and a separate private headphone mix at the same time.
 - **Separate master and headphone outputs:** The audience keeps hearing the live master. Your headphones switch to Private Preview, then return to the selected deck cues when you close it. Preview stays out of the master recording and LoudLink feed.
 
-Private Preview is for rehearsing the transition yourself; it does not require a second copy of your music files.
+Private Preview is for rehearsing the transition yourself; it does not require a second copy of your music files. While Preview Mix is playing, clicking either overlap waveform jumps both private players to that mix beat together, retaining the window tempo ratio and applying the bass/EQ automation at the new position.
 
 With Snap to Grid enabled, Preview snaps to the beat lines it displays. Grid Override temporarily permits free placement for the selected track and clears when you leave that editing session.
 
