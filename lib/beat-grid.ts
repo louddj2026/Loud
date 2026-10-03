@@ -1,3 +1,6 @@
+import { detectKicks } from "./kick-detect.ts";
+import { assessTempoSection, kickTempoSeed, type TempoSectionEvidence } from "./tempo-section-evidence.ts";
+
 export type TempoHypothesis = {
   bpm: number;
   phase: number;
@@ -48,7 +51,7 @@ export type PhraseSection = {
   reason: "structural-change" | "crash-confirmed" | "periodic-continuity" | "track-start";
 };
 
-export const GRID_ANALYSIS_VERSION = "crowd2-grid-7" as const;
+export const GRID_ANALYSIS_VERSION = "crowd2-grid-8" as const;
 
 export type BeatGridAnalysis = {
   version: typeof GRID_ANALYSIS_VERSION;
@@ -58,6 +61,7 @@ export type BeatGridAnalysis = {
   mode: "constant" | "piecewise";
   evidenceMode: "multiband-signal" | "beat-model-plus-multiband";
   tempoSections: Array<{ start: number; end: number; bpm: number; confidence: number }>;
+  tempoSectionEvidence?: TempoSectionEvidence[];
   selected: TempoHypothesis;
   hypotheses: TempoHypothesis[];
   downbeats: DownbeatHypothesis[];
@@ -1432,12 +1436,12 @@ export function analyzeBeatGrid(samples: Float32Array, sampleRate: number, optio
     probability: clamp(0.55 + model.fit.coverage * 0.35 - model.fit.p90ResidualMs / 500, 0.35, 0.92),
     metricalRelation: "primary",
   } : null;
-  const hypotheses = model && fittedModelHypothesis
+  let hypotheses = model && fittedModelHypothesis
     ? [fittedModelHypothesis, ...signalHypotheses.filter((item) => Math.abs(item.bpm - fittedModelHypothesis.bpm) >= 0.08).map((item) => ({ ...item, probability: item.probability * (1 - fittedModelHypothesis.probability) }))].slice(0, 8)
     : signalHypotheses;
-  const selected = hypotheses[0];
-  const period = 60 / selected.bpm;
-  const tempoSections = model ? model.tempoSections.length === 1
+  let selected = hypotheses[0];
+  let period = 60 / selected.bpm;
+  let tempoSections = model ? model.tempoSections.length === 1
     ? [{ ...model.tempoSections[0], bpm: model.fit.bpm, fit: model.fit }]
     : model.tempoSections.map((section) => {
       const proposals = model.beats.filter((time) => time >= section.start - 2 && time <= section.end + 2);
@@ -1445,6 +1449,48 @@ export function analyzeBeatGrid(samples: Float32Array, sampleRate: number, optio
       return { ...section, bpm: fit?.bpm ?? section.bpm, fit };
     })
     : [{ start: 0, end: duration, bpm: selected.bpm, confidence: selected.probability, fit: null as Fit | null }];
+  // Validate rate before phase correction: nudging a wrongly spaced lattice
+  // onto one kick only hides the error until the next few beats drift away.
+  let tempoSectionEvidence: TempoSectionEvidence[] | undefined;
+  if (model && tempoSections.length > 1) {
+    const kicks = detectKicks(samples, sampleRate);
+    // A contaminated intro can also slightly bias the whole-track estimate.
+    // Prefer a long, tightly fitted section near it; the independent kick
+    // comparison below still has to prove this reference fits the disputed part.
+    let referenceFit = tempoSections
+      .filter(section => section.end - section.start >= 32 && section.fit
+        && Math.abs(section.bpm / model.fit.bpm - 1) < .008
+        && section.fit.coverage >= .8 && section.fit.p90ResidualMs <= 25)
+      .sort((a, b) => (b.end - b.start) - (a.end - a.start))[0]?.fit ?? model.fit;
+    tempoSectionEvidence = tempoSections.map(section => assessTempoSection(section, referenceFit.bpm, kicks));
+    if (tempoSectionEvidence.some(check => check.decision === "contradicted-by-kicks")) {
+      // Only after a measured contradiction, independently refine the reference.
+      // A cold model pass may bias both the local and whole-track estimates.
+      const positive = kicks.filter(kick => kick.strength > 0);
+      const floor = median(positive.map(kick => kick.strength)) * .3;
+      const strongTimes = positive.filter(kick => kick.strength >= floor).map(kick => kick.time);
+      const seed = kickTempoSeed(strongTimes, referenceFit.bpm);
+      const measuredFit = seed === null ? null : fitModelWindow(strongTimes, seed);
+      if (measuredFit && measuredFit.coverage >= .75 && measuredFit.matchedOnsetRatio >= .8
+        && measuredFit.p90ResidualMs <= 20 && Math.abs(measuredFit.bpm / referenceFit.bpm - 1) < .008) {
+        referenceFit = measuredFit;
+        tempoSectionEvidence = tempoSections.map(section => assessTempoSection(section, referenceFit.bpm, kicks, true));
+      }
+      tempoSections = tempoSections.map((section, index) => tempoSectionEvidence![index].decision === "contradicted-by-kicks"
+        ? { ...section, bpm: referenceFit.bpm, fit: referenceFit }
+        : section);
+      if (tempoSections.every(section => Math.abs(section.bpm - referenceFit.bpm) < .05)) {
+        // Do not move a neighbouring section's valid phase merely because its
+        // rounded BPM is close. Collapse only when every section was disproved.
+        if (tempoSectionEvidence.every(check => check.decision === "contradicted-by-kicks")) {
+          tempoSections = [{ start: 0, end: duration, bpm: referenceFit.bpm, confidence: selected.probability, fit: referenceFit }];
+        }
+        selected = { ...selected, ...referenceFit };
+        period = referenceFit.period;
+        hypotheses = [selected, ...hypotheses.slice(1)];
+      }
+    }
+  }
   const nominalTimes: number[] = [];
   for (const section of tempoSections) {
     const sectionFit = section.fit ?? (tempoSections.length === 1 ? model?.fit ?? null : null);
@@ -1567,6 +1613,7 @@ export function analyzeBeatGrid(samples: Float32Array, sampleRate: number, optio
     mode,
     evidenceMode: model ? "beat-model-plus-multiband" : "multiband-signal",
     tempoSections: tempoSections.map(({ fit: _fit, ...section }) => ({ ...section, bpm: Math.round(section.bpm * 1000) / 1000 })),
+    ...(tempoSectionEvidence ? { tempoSectionEvidence } : {}),
     selected,
     hypotheses,
     downbeats,

@@ -236,6 +236,23 @@ test("a musical beat model establishes continuity before low-end refinement", ()
   assert.ok(Math.max(...intervals.map((interval) => Math.abs(interval - middle))) < 0.012, "an isolated model error must not create a one-beat jump");
 });
 
+test("independent kick evidence rejects a model's spurious fast intro", () => {
+  const fixture = syntheticTrack(146, { duration: 224, offset: .14 });
+  const modelBeats = [];
+  for (const [start, end, bpm] of [[0, 96, 150.873], [96, 224, 146]]) {
+    for (let time = start + .14; time < end; time += 60 / bpm) modelBeats.push(Math.round(time * 50) / 50);
+  }
+  const analysis = analyzeBeatGrid(fixture.samples, fixture.sampleRate, { modelBeats });
+  assert.ok(analysis.tempoSectionEvidence?.some(check => check.decision === "contradicted-by-kicks"));
+  assert.ok(analysis.tempoSections.every(section => Math.abs(section.bpm - 146) < .1), JSON.stringify({ sections: analysis.tempoSections, evidence: analysis.tempoSectionEvidence }));
+  const errors = [];
+  for (let time = 20 * 60 / 146 + .14; time < 90; time += 60 / 146) {
+    errors.push(Math.min(...analysis.beats.map(beat => Math.abs(beat.time - time))));
+  }
+  errors.sort((a,b) => a-b);
+  assert.ok(errors[Math.floor(errors.length * .9)] < .025, `90th percentile grid error ${errors[Math.floor(errors.length*.9)]}`);
+});
+
 test("sustained grid-speed changes become separate tempo sections", () => {
   const sampleRate = 4000;
   const first = syntheticTrack(120, { duration: 40, sampleRate, offset: 0.14 });
