@@ -6,7 +6,7 @@ export type TempoSectionEvidence = {
   windows: number;
   referenceWins: number;
   candidateWins: number;
-  decision: "keep" | "contradicted-by-kicks" | "insufficient-evidence";
+  decision: "keep" | "contradicted-by-kicks" | "insufficient-evidence" | "unconfirmed-edge";
 };
 
 /** Measure periodic support with a free phase, independently of the proposed grid. */

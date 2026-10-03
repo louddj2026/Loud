@@ -253,6 +253,42 @@ test("independent kick evidence rejects a model's spurious fast intro", () => {
   assert.ok(errors[Math.floor(errors.length * .9)] < .025, `90th percentile grid error ${errors[Math.floor(errors.length*.9)]}`);
 });
 
+test("one anomalous model window cannot create a separate intro tempo", () => {
+  const bpm = 146;
+  const fixture = syntheticTrack(bpm, { duration: 96, offset: .14 });
+  const modelBeats = [];
+  for (const [start, end, localBpm] of [[0, 16, 144.097], [16, 96, bpm]]) {
+    for (let time = start + .14; time < end; time += 60 / localBpm) {
+      modelBeats.push(Math.round(time * 50) / 50);
+    }
+  }
+  const analysis = analyzeBeatGrid(fixture.samples, fixture.sampleRate, { modelBeats });
+  assert.equal(analysis.tempoSections.length, 1, JSON.stringify(analysis.tempoSections));
+  assert.ok(Math.abs(analysis.tempoSections[0].bpm - bpm) < .1, JSON.stringify(analysis.tempoSections));
+  assert.equal(analysis.tempoSectionEvidence?.[0].decision, "unconfirmed-edge");
+  const intervals = analysis.beats.slice(1).map((beat, index) => beat.time - analysis.beats[index].time);
+  assert.ok(Math.max(...intervals.map(interval => Math.abs(interval - 60 / bpm))) < .012,
+    "an unconfirmed intro estimate must not create a boundary jump");
+});
+
+test("a short real tempo intro with independent support is preserved", () => {
+  const sampleRate = 4000;
+  const intro = syntheticTrack(120, { duration: 16, sampleRate, offset: .14 });
+  const body = syntheticTrack(146, { duration: 80, sampleRate, offset: .14 });
+  const samples = new Float32Array(96 * sampleRate);
+  samples.set(intro.samples, 0);
+  samples.set(body.samples, 16 * sampleRate);
+  const modelBeats = [];
+  for (const [start, end, bpm] of [[0, 16, 120], [16, 96, 146]]) {
+    for (let time = start + .14; time < end; time += 60 / bpm) modelBeats.push(Math.round(time * 50) / 50);
+  }
+  const analysis = analyzeBeatGrid(samples, sampleRate, { modelBeats });
+  assert.ok(analysis.tempoSections.length >= 2, JSON.stringify({ sections: analysis.tempoSections, evidence: analysis.tempoSectionEvidence }));
+  assert.ok(analysis.tempoSections.some(section => Math.abs(section.bpm - 120) < .5));
+  assert.ok(analysis.tempoSections.some(section => Math.abs(section.bpm - 146) < .5));
+  assert.notEqual(analysis.tempoSectionEvidence?.[0].decision, "unconfirmed-edge");
+});
+
 test("sustained grid-speed changes become separate tempo sections", () => {
   const sampleRate = 4000;
   const first = syntheticTrack(120, { duration: 40, sampleRate, offset: 0.14 });

@@ -1337,23 +1337,28 @@ function fitModelWindow(beats: number[], seedBpm: number) {
     .sort((a, b) => b.score - a.score)[0] ?? null;
 }
 
+function modelTempoWindow(beats: number[], start: number, end: number, fallbackBpm: number) {
+  const local = beats.filter((time) => time >= start - 1 && time <= end + 1);
+  const span = Math.min(12, Math.floor((local.length - 1) / 3));
+  const bpms: number[] = [];
+  if (span >= 4) {
+    for (let index = 0; index + span < local.length; index += 1) {
+      const bpm = 60 * span / (local[index + span] - local[index]);
+      if (bpm >= 55 && bpm <= 210 && bpm >= fallbackBpm * .65 && bpm <= fallbackBpm * 1.45) bpms.push(bpm);
+    }
+  }
+  const bpm = bpms.length ? median(bpms) : fallbackBpm;
+  const deviation = bpms.length ? median(bpms.map((value) => Math.abs(value - bpm))) : 5;
+  return { bpm, confidence: clamp(1 - deviation / 3, .1, 1) };
+}
+
 function detectTempoSections(beats: number[], globalBpm: number, duration: number) {
   const windowSeconds = 16;
   const windows: Array<{ start: number; end: number; bpm: number; confidence: number }> = [];
   for (let start = 0; start < duration; start += windowSeconds) {
     const end = Math.min(duration, start + windowSeconds);
-    const local = beats.filter((time) => time >= start - 1 && time <= end + 1);
-    const span = Math.min(12, Math.floor((local.length - 1) / 3));
-    const bpms: number[] = [];
-    if (span >= 4) {
-      for (let index = 0; index + span < local.length; index += 1) {
-        const bpm = 60 * span / (local[index + span] - local[index]);
-        if (bpm >= 55 && bpm <= 210 && bpm >= globalBpm * 0.65 && bpm <= globalBpm * 1.45) bpms.push(bpm);
-      }
-    }
-    const bpm = bpms.length ? median(bpms) : (windows.at(-1)?.bpm ?? globalBpm);
-    const deviation = bpms.length ? median(bpms.map((value) => Math.abs(value - bpm))) : 5;
-    windows.push({ start, end, bpm, confidence: clamp(1 - deviation / 3, 0.1, 1) });
+    const measured = modelTempoWindow(beats, start, end, windows.at(-1)?.bpm ?? globalBpm);
+    windows.push({ start, end, ...measured });
   }
   const smoothed = windows.map((window, index) => ({
     ...window,
@@ -1463,9 +1468,43 @@ export function analyzeBeatGrid(samples: Float32Array, sampleRate: number, optio
         && section.fit.coverage >= .8 && section.fit.p90ResidualMs <= 25)
       .sort((a, b) => (b.end - b.start) - (a.end - a.start))[0]?.fit ?? model.fit;
     tempoSectionEvidence = tempoSections.map(section => assessTempoSection(section, referenceFit.bpm, kicks));
-    if (tempoSectionEvidence.some(check => check.decision === "contradicted-by-kicks")) {
-      // Only after a measured contradiction, independently refine the reference.
-      // A cold model pass may bias both the local and whole-track estimates.
+    // A single 16-second intro window has no window before it to prove that its
+    // different rate is sustained. The detector already folds an equally short
+    // tail into the preceding body. Preserve that symmetry here, after the local
+    // fits exist, so a fresh independent kick fit can also supply phase instead
+    // of merely copying the model's possibly contaminated global phase.
+    const rawEdgeBpms = tempoSections.map((section, index) => index === 0
+      ? modelTempoWindow(model.beats, section.start, section.end, referenceFit.bpm).bpm
+      : null);
+    const rawEdgeEvidence = tempoSections.map((section, index) => rawEdgeBpms[index] === null
+      ? null
+      : assessTempoSection({ ...section, bpm: rawEdgeBpms[index]! }, referenceFit.bpm, kicks));
+    // If one short edge window independently supports its own unsmoothed rate,
+    // keep that real tempo instead of the two-window average. The raw model
+    // candidate is adopted only with kick support; contamination stays inert.
+    tempoSections = tempoSections.map((section, index) => {
+      if ((rawEdgeEvidence[index]?.candidateWins ?? 0) === 0) return section;
+      const proposals = model.beats.filter(time => time >= section.start && time < section.end);
+      const fit = fitModelWindow(proposals, rawEdgeBpms[index]!);
+      return fit ? { ...section, bpm: fit.bpm, fit } : { ...section, bpm: rawEdgeBpms[index]! };
+    });
+    tempoSectionEvidence = tempoSectionEvidence.map((check, index) => rawEdgeEvidence[index]?.candidateWins
+      ? rawEdgeEvidence[index]!
+      : check);
+    const unconfirmedEdge = tempoSections.map((section, index) => index === 0
+      && section.end - section.start < 24 && tempoSections.length > 1
+      && Math.abs(section.bpm / referenceFit.bpm - 1) >= .008
+      && tempoSectionEvidence![index].candidateWins === 0
+      && (rawEdgeEvidence[index]?.candidateWins ?? 0) === 0);
+    tempoSectionEvidence = tempoSectionEvidence.map((check, index) => unconfirmedEdge[index]
+      ? { ...check, decision: "unconfirmed-edge" as const }
+      : check);
+    const needsCorrection = () => tempoSectionEvidence!.some(check => check.decision === "contradicted-by-kicks"
+      || check.decision === "unconfirmed-edge");
+    if (needsCorrection()) {
+      // After a measured contradiction or an unsupported edge estimate,
+      // independently refine the reference. A cold model pass may bias both
+      // the local and whole-track estimates.
       const positive = kicks.filter(kick => kick.strength > 0);
       const floor = median(positive.map(kick => kick.strength)) * .3;
       const strongTimes = positive.filter(kick => kick.strength >= floor).map(kick => kick.time);
@@ -1474,15 +1513,22 @@ export function analyzeBeatGrid(samples: Float32Array, sampleRate: number, optio
       if (measuredFit && measuredFit.coverage >= .75 && measuredFit.matchedOnsetRatio >= .8
         && measuredFit.p90ResidualMs <= 20 && Math.abs(measuredFit.bpm / referenceFit.bpm - 1) < .008) {
         referenceFit = measuredFit;
-        tempoSectionEvidence = tempoSections.map(section => assessTempoSection(section, referenceFit.bpm, kicks, true));
+        tempoSectionEvidence = tempoSections.map((section, index) => {
+          const check = assessTempoSection(section, referenceFit.bpm, kicks, true);
+          return unconfirmedEdge[index] ? { ...check, decision: "unconfirmed-edge" as const } : check;
+        });
       }
       tempoSections = tempoSections.map((section, index) => tempoSectionEvidence![index].decision === "contradicted-by-kicks"
+        || tempoSectionEvidence![index].decision === "unconfirmed-edge"
         ? { ...section, bpm: referenceFit.bpm, fit: referenceFit }
         : section);
-      if (tempoSections.every(section => Math.abs(section.bpm - referenceFit.bpm) < .05)) {
+      const oneTempoFamily = tempoSections.every(section => Math.abs(section.bpm / referenceFit.bpm - 1) < .008);
+      if (tempoSections.every(section => Math.abs(section.bpm - referenceFit.bpm) < .05) || (unconfirmedEdge.some(Boolean) && oneTempoFamily)) {
         // Do not move a neighbouring section's valid phase merely because its
-        // rounded BPM is close. Collapse only when every section was disproved.
-        if (tempoSectionEvidence.every(check => check.decision === "contradicted-by-kicks")) {
+        // rounded BPM is close. Collapse only when every section was disproved,
+        // or when one unsupported edge is the sole apparent exception.
+        if (tempoSectionEvidence.every(check => check.decision === "contradicted-by-kicks")
+          || (unconfirmedEdge.some(Boolean) && oneTempoFamily)) {
           tempoSections = [{ start: 0, end: duration, bpm: referenceFit.bpm, confidence: selected.probability, fit: referenceFit }];
         }
         selected = { ...selected, ...referenceFit };
