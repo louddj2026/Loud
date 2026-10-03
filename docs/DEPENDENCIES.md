@@ -1,6 +1,6 @@
 # Dependencies and download sources
 
-Install commands download dependencies directly; this repository stores version manifests and setup code only. No paid cloud AI API or Codex installation is needed by the documented setup.
+Source-install commands download dependencies directly. The GitHub release also provides a single Windows installer containing every dependency that Loud may lawfully redistribute. No paid cloud AI API or Codex installation is needed.
 
 ## Booth
 
@@ -28,6 +28,8 @@ Beat/drum analysis is required for Loud. Run `pnpm setup:analysis` and `pnpm che
 - Matching FFprobe from the [Gyan FFmpeg 6.1.1 release](https://github.com/GyanD/codexffmpeg/releases/tag/6.1.1).
 
 Exact Python package versions are in `scripts/analysis-runtime-requirements.txt`; the torchaudio constraint override is in `scripts/analysis-runtime-overrides.txt`. Hashes for model and decoder downloads are in `scripts/setup-analysis-runtime.mjs`. Do not independently upgrade the decoder, torch or model versions without retesting their timing agreement.
+
+The Windows release installer bundles Python, all pinned Python packages, FFmpeg/FFprobe and the MIT-licensed Beat This model. It deliberately excludes the Demucs checkpoint: the Demucs maintainer states that pretrained weights are not covered by the code's MIT licence and are supplied only for scientific purposes. The wizard therefore retrieves that one file from Meta's official host and verifies SHA-256 `8726e21a993978c7ba086d3872e7608d7d5bfca646ca4aca459ffda844faa8b4`. This is the only dependency download performed by the release installer.
 
 ## Optional song-section labels
 
@@ -59,4 +61,4 @@ Consult each linked upstream project and the licence files installed with its pa
 
 The native output bridge uses Python 3.12, [sounddevice/PortAudio](https://python-sounddevice.readthedocs.io/en/0.5.3/installation.html), [NumPy](https://numpy.org/) and [websockets](https://websockets.readthedocs.io/). Exact package versions are in `scripts/audio-bridge-requirements.txt`. `uv pip install` downloads them from PyPI. Windows sounddevice wheels include PortAudio; Loud enables its ASIO build with `SD_ENABLE_ASIO=1`. Install the DJ device manufacturer's own driver separately. Linux may need a system PortAudio package.
 
-No driver, runtime, package binary or pairing token is distributed in this source snapshot. The local `.audio-bridge/` environment is ignored by Git. See [installation and routing](AUDIO-HARDWARE.md).
+No driver or pairing token is distributed. The Windows release installer includes the bridge's Python packages and a Start-menu launcher; source checkouts can still use a local `.audio-bridge/` environment. See [installation and routing](AUDIO-HARDWARE.md).

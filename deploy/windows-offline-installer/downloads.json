@@ -1,0 +1,25 @@
+{
+  "node": {
+    "file": "node-v24.20.0-win-x64.zip",
+    "directory": "node-v24.20.0-win-x64",
+    "url": "https://nodejs.org/dist/v24.20.0/node-v24.20.0-win-x64.zip",
+    "sha256": "6cac9ffbca8f6a47091e4b5c772e0606049c3871cb67d900c0cedde630e545ba"
+  },
+  "uv": {
+    "file": "uv-x86_64-pc-windows-msvc.zip",
+    "url": "https://releases.astral.sh/github/uv/releases/download/0.12.13/uv-x86_64-pc-windows-msvc.zip",
+    "sha256": "a86c9dc7bad9b03f388583b7187c05fe9951c2e0d392217e8fd43d97787f6ec2"
+  },
+  "nsis": {
+    "file": "nsis-3.13.zip",
+    "directory": "nsis-3.13",
+    "url": "https://downloads.sourceforge.net/project/nsis/NSIS%203/3.13/nsis-3.13.zip",
+    "sha256": "ba63dffc4410ee89193e1cb5a41989991bd77c61068da17e3156d136b7b0b3d8"
+  },
+  "demucsCheckpoint": {
+    "file": "955717e8-8726e21a.th",
+    "url": "https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/955717e8-8726e21a.th",
+    "sha256": "8726e21a993978c7ba086d3872e7608d7d5bfca646ca4aca459ffda844faa8b4",
+    "bytes": 84141911
+  }
+}

@@ -8,11 +8,19 @@ The booth includes beat grids, loops, EQ, cue controls, configurable keyboard/MI
 
 This is a source-code snapshot of the current working application. It opens with an empty library: bring your own music. The repository contains no installed dependencies, music, model weights, saved sets, local settings, or generated analysis. Those stay on each user's computer.
 
-## Start on Windows
+## Install on Windows
+
+The easiest setup is the **Loud Offline Installer** available from [GitHub Releases](https://github.com/louddj2026/Loud/releases). It is one Windows x64 `.exe` with an ordinary installation wizard. It includes Loud, Node.js, Python, PyTorch, Beat This and its model, Demucs code, FFmpeg/FFprobe, the native DJ audio bridge and the other pinned packages. You do not need Node, Git, uv or a separate Python installation.
+
+The wizard makes one verified network download: the official Demucs checkpoint (about 80 MiB). Demucs' maintainer says the pretrained weights are outside the code's MIT licence and supplied only for scientific purposes, so Loud does not republish that file inside its GitHub asset. The wizard downloads the exact official file and checks its SHA-256 before enabling analysis. Music and hardware-manufacturer drivers are not included.
+
+After installation, open **Loud** from the desktop or Start menu and choose your own music folder. Windows may show an unsigned-app warning because code signing is not configured for this early release.
+
+## Start from source on Windows
 
 The complete analysis setup currently targets **Windows x64**. Use a current Edge or Chrome browser. Other platforms have not been validated for the complete analysis pipeline.
 
-1. Install [Node.js 24 LTS](https://nodejs.org/en/download), [Git](https://git-scm.com/downloads/), and [uv](https://docs.astral.sh/uv/getting-started/installation/). All three are required for the complete setup.
+1. Install [Node.js 24 LTS](https://nodejs.org/en/download), [Git](https://git-scm.com/downloads/), and [uv](https://docs.astral.sh/uv/getting-started/installation/). All three are required only for the source setup.
 2. Download/extract this source, or clone the repository, then open a terminal in the folder containing `package.json`.
 3. Install the pinned package manager and dependencies:
 
@@ -107,7 +115,8 @@ Both supplied launch commands bind to localhost. Publishing the source on GitHub
 | `pnpm typecheck` | TypeScript checks; run after a build on a fresh checkout |
 | `pnpm test` | Full existing regression suite; known failures are documented below |
 | `pnpm check:fast` | Existing short regression suite |
-| `pnpm setup:analysis` / `pnpm check:analysis` | Download / verify native analysis dependencies |
+| `pnpm setup:analysis` / `pnpm check:analysis` | Download / verify native analysis dependencies for a source checkout |
+| `pnpm build:offline-installer` | Build the single Windows installer from verified local runtime inputs |
 | `pnpm analyse` | Analyse the indexed library |
 | `pnpm library:compact` | Refresh compact library records |
 

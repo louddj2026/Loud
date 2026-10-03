@@ -31,9 +31,9 @@ For DJ mixers, this release uses **Loud's internal mix**: one USB stereo pair ca
 
 ## Optional native audio bridge
 
-This local helper sends one four-channel stream (master L/R, cue L/R) to a native PortAudio device. It can expose **ASIO** on Windows where the manufacturer's installed ASIO driver supports it, and operating-system APIs such as WASAPI or Core Audio. Browser audio-device selection alone is not ASIO. The bridge is optional, and its dependencies are fetched from their publishers rather than included in this source distribution.
+This local helper sends one four-channel stream (master L/R, cue L/R) to a native PortAudio device. It can expose **ASIO** on Windows where the manufacturer's installed ASIO driver supports it, and operating-system APIs such as WASAPI or Core Audio. Browser audio-device selection alone is not ASIO. The Windows release installer includes the bridge and its packages; use **Start DJ audio bridge** in the Loud Start-menu folder. The manufacturer's hardware driver remains a separate installation.
 
-Windows setup from the project folder, with [uv](https://docs.astral.sh/uv/getting-started/installation/) installed:
+For a source checkout, set up the bridge from the project folder with [uv](https://docs.astral.sh/uv/getting-started/installation/):
 
 ```powershell
 uv venv --python 3.12 .audio-bridge

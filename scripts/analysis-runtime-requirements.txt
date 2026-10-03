@@ -13,6 +13,8 @@ torch==2.5.1+cpu
 torchaudio==2.5.1+cpu
 numpy==1.26.4
 soundfile==0.14.0
+sounddevice==0.5.3
+websockets==15.0.1
 beat-this==1.1.0
 einops==0.8.2
 rotary-embedding-torch==0.9.1
