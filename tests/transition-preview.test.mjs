@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { assistedAutomationAtBeat, assistedCuePrerollStart, normaliseAssistedOverlapAutomation } from "../lib/assisted-playback.ts";
-import { TRANSITION_PREVIEW_LEAD_BEATS, TRANSITION_PREVIEW_LIVE_ARM_GUARD_SECONDS, selectTransitionPreviewPair, transitionPreviewBeat, transitionPreviewCanCommit, transitionPreviewCrowdAuditionVolume, transitionPreviewLiveArmDecision, transitionPreviewMarkTime, transitionPreviewTempoRate, transitionPreviewWindowReady } from "../lib/transition-preview.ts";
+import { TRANSITION_PREVIEW_LEAD_BEATS, TRANSITION_PREVIEW_LIVE_ARM_GUARD_SECONDS, selectTransitionPreviewPair, transitionPreviewBeat, transitionPreviewCanCommit, transitionPreviewCrowdAuditionVolume, transitionPreviewLiveArmDecision, transitionPreviewMarkTime, transitionPreviewTempoRate, transitionPreviewTempoRateIsSafe, transitionPreviewWindowReady } from "../lib/transition-preview.ts";
 import { focusWaveBufferedRange, focusWaveChunkPlan, focusWaveShouldRebase } from "../lib/waveform-gesture.ts";
 
 const boothSource = await readFile(new URL("../app/dj/dj-booth.tsx", import.meta.url), "utf8");
@@ -537,7 +537,7 @@ test("Preview uses source BPMs for preroll but confirmed grid spans for its one 
   assert.match(playMixSource, /outgoingAudio\.playbackRate = 1/);
   assert.match(playMixSource, /const incomingRate = transitionPreviewTempoRate\(preview\.outgoingWindow, preview\.incomingWindow\)/);
   assert.doesNotMatch(playMixSource, /const incomingRate = bpmMatchedTempoRate\(outgoingBpm, incomingBpm\)/);
-  assert.doesNotMatch(playMixSource, /projectedOutgoing|tempoValidation|outgoingRate/);
+  assert.doesNotMatch(playMixSource, /projectedOutgoing|tempoValidation|const outgoingRate\s*=/);
 });
 
 test("preview only commits two complete windows and a whole beat count", () => {
@@ -545,6 +545,15 @@ test("preview only commits two complete windows and a whole beat count", () => {
   assert.equal(transitionPreviewCanCommit({ start: 20, end: 30 }, { start: 4, end: 14 }, 64), true);
   assert.equal(transitionPreviewCanCommit({ start: null, end: 30 }, { start: 4, end: 14 }, 64), false);
   assert.equal(transitionPreviewCanCommit({ start: 20, end: 30 }, { start: 4, end: 14 }, 64.5), false);
+});
+
+test("a half/double-time window mismatch cannot reach Preview or a live deck", () => {
+  const outgoing = { start: 342.40316085019964, end: 447.61037361770025 };
+  const incoming = { start: 52.74560398879337, end: 105.00603822898555 };
+  assert.ok(Math.abs(transitionPreviewTempoRate(outgoing, incoming) - .4967381310222854) < 1e-12);
+  assert.equal(transitionPreviewTempoRateIsSafe(outgoing, incoming), false);
+  assert.equal(transitionPreviewCanCommit(outgoing, incoming, 128), false);
+  assert.equal(transitionPreviewTempoRateIsSafe({ start: 0, end: 64 }, { start: 0, end: 48 }), true);
 });
 
 test("a confirmed window is the grid authority: no snap-to-old-grid, no disagreement warning", () => {
@@ -638,11 +647,15 @@ test("unapplied Preview cues survive a refresh or a rebuild", async () => {
     outgoingTrackId: "a", incomingTrackId: "b",
     outgoingWindow: { start: 313.263, end: 351.97 },
     incomingWindow: { start: 58.345, end: 97.536 },
+    outgoingAnchor: "middle", incomingAnchor: "end", outgoingMiddleAnchor: 332.6165,
     beats: 96, bassSwapBeat: 48,
   });
   assert.ok(draft);
   assert.equal(draft.beats, 96);
   assert.equal(draft.bassSwapBeat, 48);
+  assert.equal(draft.outgoingAnchor, "middle");
+  assert.equal(draft.outgoingMiddleAnchor, 332.6165);
+  assert.equal(draft.incomingAnchor, "end");
   assert.equal(previewDraftKey("a", "b"), "a::b");
   // The same tunes the other way round is a different mix.
   assert.notEqual(previewDraftKey("a", "b"), previewDraftKey("b", "a"));
@@ -663,6 +676,14 @@ test("unapplied Preview cues survive a refresh or a rebuild", async () => {
   // Applied teaching still wins: a draft only fills an uncommitted pair.
   assert.match(boothSource, /if \(!transitionPreviewWindowReady\(outgoingWindow\) \|\| !transitionPreviewWindowReady\(incomingWindow\)\)/);
   assert.match(boothSource, /Your unapplied cues were restored/);
+  assert.match(boothSource, /outgoingAnchor: preview\.outgoingAnchor \?\? undefined/);
+  assert.match(boothSource, /outgoingAnchor: draft\.outgoingAnchor \?\? \(transitionPreviewWindowReady\(draft\.outgoingWindow\) \? "start" : null\)/);
+  assert.match(boothSource, /incomingAnchor: draft\.incomingAnchor \?\? \(transitionPreviewWindowReady\(draft\.incomingWindow\) \? "end" : null\)/);
+});
+
+test("the visible BPM follows the media rate the crowd actually hears", () => {
+  assert.match(boothSource, /const tempoRate = returningRates\[id\] \?\? audio\.playbackRate;/);
+  assert.doesNotMatch(boothSource, /const tempoRate = returningRates\[id\] \?\? deck\.tempoRate;/);
 });
 
 test("an unmarked edge is never stored as a mark at zero seconds", async () => {

@@ -40,7 +40,7 @@ import { isKnownShortSample } from "../../lib/track-duration-policy";
 import { bassOwnerAtBeat, bassOwnershipSegments, toggleBassSwapBeat } from "../../lib/bass-ownership";
 import { nextBassOverride, overriddenBassLow } from "../../lib/bass-kill";
 import { type PreviewDraft } from "../../lib/preview-draft";
-import { TRANSITION_PREVIEW_LEAD_BEATS, deriveTransitionPreviewWindow, type TransitionPreviewAnchorEdge, transitionPreviewGridBeats, transitionPreviewSnapTime, TRANSITION_PREVIEW_LIVE_ARM_GUARD_SECONDS, TRANSITION_PREVIEW_SILENT_PREROLL_BEATS, selectTransitionPreviewPair, transitionPreviewBeat, transitionPreviewCanCommit, transitionPreviewCrowdAuditionVolume, transitionPreviewLiveArmDecision, transitionPreviewMarkTime, transitionPreviewTempoRate, transitionPreviewWindowReady, type TransitionPreviewLiveRuntimeState, type TransitionPreviewWindow } from "../../lib/transition-preview";
+import { TRANSITION_PREVIEW_LEAD_BEATS, deriveTransitionPreviewWindow, type TransitionPreviewAnchorEdge, transitionPreviewGridBeats, transitionPreviewSnapTime, TRANSITION_PREVIEW_LIVE_ARM_GUARD_SECONDS, TRANSITION_PREVIEW_SILENT_PREROLL_BEATS, selectTransitionPreviewPair, transitionPreviewBeat, transitionPreviewCanCommit, transitionPreviewCrowdAuditionVolume, transitionPreviewLiveArmDecision, transitionPreviewMarkTime, transitionPreviewTempoRate, transitionPreviewTempoRateIsSafe, transitionPreviewWindowReady, type TransitionPreviewLiveRuntimeState, type TransitionPreviewWindow } from "../../lib/transition-preview";
 import { previewMixSeekPoint, seekAndPlayPreviewPair } from "../../lib/preview-paired-seek";
 import { PREVIEW_OPEN_SEEK_TOLERANCE_SECONDS, PREVIEW_OVERLAP_RESEEK_SECONDS, PREVIEW_OVERLAP_SAMPLE_EVERY_BEATS, previewOpenSeekDecision, previewOverlapDriftSummary, type PreviewOverlapSample } from "../../lib/preview-overlap-lock";
 import { FOCUS_WAVE_DRAG_REBASE_FRACTION, FOCUS_WAVE_GLIDE_STOP_WINDOWS_PER_SECOND, FOCUS_WAVE_THROW_WINDOW_MS, focusWaveBufferedRange, focusWaveChunkPlan, focusWaveDragThresholdPx, focusWaveDragTime, focusWaveGlideStep, focusWaveShouldRebase, focusWaveThrowLimit, focusWaveThrowVelocity, type FocusWaveThrowSample } from "../../lib/waveform-gesture";
@@ -3057,7 +3057,9 @@ export default function DjBooth() {
         const updateTime = (id: DeckId, deck: DeckState, audio: HTMLAudioElement | null) => {
           if (!audio || !deck.playing || waveformScrubbing.current[id]) return deck;
           const currentTime = boothVisualTrackTime(audio.currentTime, deck.analysis?.duration ?? audio.duration);
-          const tempoRate = returningRates[id] ?? deck.tempoRate;
+          // The media element is the clock the crowd hears. Reflect its real
+          // rate so a stale state value can never hide half-speed audio.
+          const tempoRate = returningRates[id] ?? audio.playbackRate;
           if (Math.abs(currentTime - deck.currentTime) < .004 && tempoRate === deck.tempoRate) return deck;
           return { ...deck, currentTime, tempoRate };
         };
@@ -3627,7 +3629,12 @@ export default function DjBooth() {
     if (!preview) return;
     if (preview.audition === "mix" && !jump) { stopTransitionPreviewPlayback("Transition preview paused"); return; }
     if (!transitionPreviewCanCommit(preview.outgoingWindow, preview.incomingWindow, preview.beats)) {
-      setTransitionPreview((current) => current ? { ...current, status: "Set START and END on both private players before previewing the mix" } : current);
+      const unsafeRate = transitionPreviewWindowReady(preview.outgoingWindow)
+        && transitionPreviewWindowReady(preview.incomingWindow)
+        && !transitionPreviewTempoRateIsSafe(preview.outgoingWindow, preview.incomingWindow);
+      setTransitionPreview((current) => current ? { ...current, status: unsafeRate
+        ? "Those windows imply a half/double-time speed error · re-mark one window before previewing"
+        : "Set START and END on both private players before previewing the mix" } : current);
       return;
     }
     // Preview Mix is an audition action, so make its private bus audible before
@@ -8232,6 +8239,10 @@ export default function DjBooth() {
         incomingTrackId: preview.incomingTrack.id,
         outgoingWindow: preview.outgoingWindow,
         incomingWindow: preview.incomingWindow,
+        outgoingAnchor: preview.outgoingAnchor ?? undefined,
+        incomingAnchor: preview.incomingAnchor ?? undefined,
+        outgoingMiddleAnchor: preview.outgoingMiddleAnchor,
+        incomingMiddleAnchor: preview.incomingMiddleAnchor,
         beats: preview.beats,
         bassSwapBeat: preview.automation.bassSwapBeat,
         bassSwapBeats: preview.automation.bassSwapBeats,
@@ -8332,6 +8343,14 @@ export default function DjBooth() {
               ...current,
               outgoingWindow: draft.outgoingWindow,
               incomingWindow: draft.incomingWindow,
+              // Preserve the edge the DJ actually marked. Legacy drafts did
+              // not record it, so fall back to the stable edges used by saved
+              // live teaching; changing the beat count then really resizes the
+              // span instead of relabelling (for example) 256 beats as 128.
+              outgoingAnchor: draft.outgoingAnchor ?? (transitionPreviewWindowReady(draft.outgoingWindow) ? "start" : null),
+              incomingAnchor: draft.incomingAnchor ?? (transitionPreviewWindowReady(draft.incomingWindow) ? "end" : null),
+              outgoingMiddleAnchor: draft.outgoingAnchor === "middle" ? draft.outgoingMiddleAnchor : undefined,
+              incomingMiddleAnchor: draft.incomingAnchor === "middle" ? draft.incomingMiddleAnchor : undefined,
               beats: restoredBeats,
               automation: normaliseAssistedOverlapAutomation({
                 ...resizeAssistedOverlapAutomation(current.automation, restoredBeats),

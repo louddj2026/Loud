@@ -16,6 +16,8 @@ export type PreviewDraftWindow = {
   end: number | null;
 };
 
+export type PreviewDraftAnchorEdge = "start" | "middle" | "end";
+
 /**
  * A saved REPLICATE: which tune's block is copied, where, and how the
  * windows stood before it, so restoring can rebuild the splice exactly and
@@ -36,6 +38,10 @@ export type PreviewDraft = {
   incomingTrackId: string;
   outgoingWindow: PreviewDraftWindow;
   incomingWindow: PreviewDraftWindow;
+  outgoingAnchor?: PreviewDraftAnchorEdge;
+  incomingAnchor?: PreviewDraftAnchorEdge;
+  outgoingMiddleAnchor?: number;
+  incomingMiddleAnchor?: number;
   beats: number;
   bassSwapBeat?: number;
   /** Empty means automatic bass handover at the overlap exit. */
@@ -67,6 +73,10 @@ function readWindow(value: unknown): PreviewDraftWindow | null {
   return { start: safeStart, end: safeEnd };
 }
 
+function readAnchor(value: unknown): PreviewDraftAnchorEdge | undefined {
+  return value === "start" || value === "middle" || value === "end" ? value : undefined;
+}
+
 /**
  * Accept only what could plausibly have been marked. A malformed or stale
  * draft must never overwrite good coordinates, so anything unreadable is
@@ -84,6 +94,12 @@ export function parsePreviewDraft(value: unknown): PreviewDraft | null {
   const beats = Number(candidate.beats);
   if (!Number.isInteger(beats) || beats < 1 || beats > 512) return null;
   const bassSwapBeat = typeof candidate.bassSwapBeat === "number" ? candidate.bassSwapBeat : Number.NaN;
+  const outgoingMiddleAnchor = readTime(candidate.outgoingMiddleAnchor);
+  const incomingMiddleAnchor = readTime(candidate.incomingMiddleAnchor);
+  const rawOutgoingAnchor = readAnchor(candidate.outgoingAnchor);
+  const rawIncomingAnchor = readAnchor(candidate.incomingAnchor);
+  const outgoingAnchor = rawOutgoingAnchor === "middle" && outgoingMiddleAnchor === null ? undefined : rawOutgoingAnchor;
+  const incomingAnchor = rawIncomingAnchor === "middle" && incomingMiddleAnchor === null ? undefined : rawIncomingAnchor;
   const savedAt = typeof candidate.savedAt === "string" ? candidate.savedAt : undefined;
   const replicate = readReplicate(candidate.replicate);
   return {
@@ -91,6 +107,10 @@ export function parsePreviewDraft(value: unknown): PreviewDraft | null {
     incomingTrackId,
     outgoingWindow,
     incomingWindow,
+    ...(outgoingAnchor ? { outgoingAnchor } : {}),
+    ...(incomingAnchor ? { incomingAnchor } : {}),
+    ...(outgoingAnchor === "middle" && outgoingMiddleAnchor !== null ? { outgoingMiddleAnchor } : {}),
+    ...(incomingAnchor === "middle" && incomingMiddleAnchor !== null ? { incomingMiddleAnchor } : {}),
     beats,
     ...(Number.isInteger(bassSwapBeat) && bassSwapBeat >= 1 && bassSwapBeat <= beats ? { bassSwapBeat } : {}),
     ...(Array.isArray(candidate.bassSwapBeats) ? { bassSwapBeats: normaliseBassSwapBeats(candidate.bassSwapBeats, beats) } : {}),

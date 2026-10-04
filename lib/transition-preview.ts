@@ -201,6 +201,19 @@ export function transitionPreviewTempoRate(
   return incomingSpan / outgoingSpan;
 }
 
+/**
+ * Half/double-time window mistakes must never reach a live deck. Genuine DJ
+ * tempo matching stays inside this deliberately broad range; a rate outside
+ * it means the two windows cannot plausibly describe the same beat count.
+ */
+export function transitionPreviewTempoRateIsSafe(
+  outgoing: TransitionPreviewWindow,
+  incoming: TransitionPreviewWindow,
+) {
+  const rate = transitionPreviewTempoRate(outgoing, incoming);
+  return Number.isFinite(rate) && rate >= 2 / 3 && rate <= 3 / 2;
+}
+
 export function transitionPreviewBeat(
   currentTime: number,
   window: TransitionPreviewWindow,
@@ -219,7 +232,8 @@ export function transitionPreviewCanCommit(
   return transitionPreviewWindowReady(outgoing)
     && transitionPreviewWindowReady(incoming)
     && Number.isInteger(beats)
-    && beats > 0;
+    && beats > 0
+    && transitionPreviewTempoRateIsSafe(outgoing, incoming);
 }
 
 /** Which edge of a window the DJ marked. The other edge is derived from it. */
