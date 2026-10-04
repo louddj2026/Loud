@@ -504,7 +504,10 @@ async function runMapping(track: MusicTrack, job: MappingJob) {
     job.state = "complete";
     job.completedAt = Date.now();
     sync(job);
-    await recordLoadTiming(job);
+    // Timing telemetry is diagnostic only. A slow filesystem/virus scanner
+    // must never hold the one-at-a-time analysis lane after the result is
+    // already saved and marked complete.
+    void recordLoadTiming(job);
   } catch (error) {
     // A beat worker this job woke early must still idle out if the job died first.
     void earlyBeatWorker?.then((worker) => { if (worker) releaseBeatWorkerAfterIdle(worker); });

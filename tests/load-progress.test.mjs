@@ -236,6 +236,18 @@ test("the booth carries no time-derived progress, no 50-step scale and no invent
   assert.doesNotMatch(lab, /estimatedTotalSeconds|time left/);
 });
 
+test("normal deck loads reuse saved analysis and telemetry cannot hold the analysis lane", async () => {
+  const booth = await readFile(new URL("../app/dj/dj-booth.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(booth, /freshAnalysisWiped|deck\.analysis\.wiped|FRESH ANALYSIS · wiping stored grid/,
+    "ordinary deck loading must not turn a saved tune into a cold analysis");
+
+  const route = await readFile(new URL("../app/api/map/route.ts", import.meta.url), "utf8");
+  assert.match(route, /void recordLoadTiming\(job\);/,
+    "diagnostic timing writes must run after the mapping result releases the lane");
+  assert.doesNotMatch(route, /await recordLoadTiming\(job\);/,
+    "the next tune must not wait for diagnostic file I/O");
+});
+
 test("the separator counts a block on its end callback only, and reads the block count from Demucs' own loop", async () => {
   const separation = await readFile(new URL("../scripts/drums_separation.py", import.meta.url), "utf8");
   assert.match(separation, /if state == "end":\s*\n\s*self\.done \+= 1/);

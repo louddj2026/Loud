@@ -2384,7 +2384,6 @@ export default function DjBooth() {
   // Decks always load the full tune, the drawn waves are the full tune, and
   // the grids keep their own foundations — the stem→kicks→grid pipeline is
   // untouched by this; only deck playback and the header toggle are gone.
-  const freshAnalysisWiped = useRef(new Set<string>());
   // DJ, 30 Aug 2026: "snap to grid on in booth generally, unless otherwise
   // turned off." ON is the standing state — a fresh browser starts snapped —
   // and the header switch is the one legitimate off. The preview keeps its
@@ -4454,18 +4453,9 @@ export default function DjBooth() {
   const loadTrack = async (id: DeckId, track: Track, approvedAnalysis?: Analysis | null, restoreAssistedWindows = false, analyseAfterLoad = false, options: LoadTrackOptions = {}) => {
     if (options.manual) prepareManualDeckLoad(id);
     if (isRecording() && track.id.startsWith("upload-")) recordAction({ kind: "load", deck: id, trackId: track.id, data: { trackName: track.name } });
-    // DJ, 25 Aug, until further notice: every tune loaded gets its stored
-    // analysis WIPED — taught windows included, at his explicit direction —
-    // and a fresh mapping from the drums stem. Once per tune per session, or
-    // a reload of the same tune would burn another 40-90s analysis.
-    if (track.id.startsWith("upload-") && !freshAnalysisWiped.current.has(track.id)) { // wipe-and-fresh runs regardless of the stem-listening toggle (DJ, 26 Aug rollout)
-      freshAnalysisWiped.current.add(track.id);
-      setLoopTeachingStatus((current) => ({ ...current, [id]: `FRESH ANALYSIS · wiping stored grid for ${track.name} · re-analysing from the drums stem` }));
-      await fetch(`/api/map?id=${encodeURIComponent(track.id)}`, { method: "DELETE" }).catch(() => undefined);
-      approvedAnalysis = null;
-      track = { ...track, mapped: false, analysis: "" };
-      reportCrowdLiveEvent("deck.analysis.wiped", { deck: id, trackId: track.id });
-    }
+    // A mapped tune's saved drum/beat analysis is durable library data. Cold
+    // re-analysis is an explicit maintenance action; ordinary deck loading
+    // must reuse the validated record instead of deleting it once per tab.
     const replacingTrack = decksCurrent.current[id].track?.id !== track.id;
     reportCrowdLiveEvent("deck.load.requested", {
       deck: id,
