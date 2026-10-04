@@ -7125,6 +7125,98 @@ export default function DjBooth() {
     prepareLoopStandby(id, decksCurrent.current[id].loopStart ?? preview.time);
     lastPlaying.current = lastPlaying.current.filter((deckId) => deckId !== id);
   };
+  const armSavedPreviewTransitionOnManualPlay = (id: DeckId, outgoingAudio: HTMLAudioElement) => {
+    const prepared = preparedDemoCurrent.current;
+    const cueState = assistedCueState;
+    if (demoRuntime.current || assistedPlaying.current || assistedMode !== "ready" || assistedSource !== "loaded") return false;
+    if (!prepared?.rotatingAssisted || prepared.plan.tracks.length !== 2 || !cueState?.mixInSet) return false;
+    const [outgoing, incoming] = prepared.plan.tracks;
+    const outgoingState = decksCurrent.current[id];
+    const incomingState = decksCurrent.current[incoming.deck];
+    if (outgoing.deck !== id
+      || outgoingState.track?.id !== outgoing.id
+      || incomingState.track?.id !== incoming.id
+      || cueState.deck !== incoming.deck
+      || cueState.track.id !== incoming.id) return false;
+    const incomingAudio = activeAudio(incoming.deck);
+    const silentPrerollAt = assistedCuePrerollStart(outgoing.analysis, outgoing.exitRunway, outgoing.bpm);
+    const decision = transitionPreviewLiveArmDecision({
+      runtimeState: "none",
+      decksMatch: true,
+      outgoingPlaying: !outgoingAudio.paused && !outgoingAudio.ended && !outgoingState.cuePreviewing,
+      incomingReady: mediaReadyForTrack(incomingAudio, incomingState.track),
+      incomingStopped: Boolean(incomingAudio?.paused && !incomingState.cuePreviewing),
+      runtimeHealthy: true,
+      outgoingTime: outgoingAudio.currentTime,
+      silentPrerollAt,
+      otherRunnerActive: false,
+    });
+    if (decision.action !== "arm") {
+      const reason = decision.reason === "silent-preroll-passed"
+        ? `the ${ASSISTED_SILENT_PREROLL_BEATS}-beat silent-preroll point has already passed`
+        : decision.reason === "incoming-unavailable"
+          ? `Deck ${incoming.deck}'s audio is not ready`
+          : decision.reason === "incoming-not-stopped"
+            ? `Deck ${incoming.deck} is already playing`
+            : "the saved pair is no longer ready";
+      setAssistedStatus(`${outgoing.name} is playing · saved ${outgoing.deck} → ${incoming.deck} transition not armed because ${reason}`);
+      reportCrowdLiveEvent("transition.manual-play-arm-skipped", {
+        outgoingTrackId: outgoing.id,
+        incomingTrackId: incoming.id,
+        outgoingDeck: outgoing.deck,
+        incomingDeck: incoming.deck,
+        outgoingTime: outgoingAudio.currentTime,
+        silentPrerollAt,
+        reason: decision.reason,
+      });
+      return false;
+    }
+    demoToken.current += 1;
+    assistedToken.current += 1;
+    if (demoTimer.current) clearInterval(demoTimer.current);
+    demoTimer.current = null;
+    assistedRunning.current = true;
+    assistedPlaying.current = true;
+    assistedReplaySnapshot.current = null;
+    demoRuntime.current = {
+      prepared,
+      transitionIndex: 0,
+      stage: "primary",
+      busy: false,
+      lastCorrectionAt: 0,
+      lastStatusAt: 0,
+      settleUntil: 0,
+    };
+    const order = Math.max(1, (prepared.assistedOrderOffset ?? 0) + 1);
+    setAssistedPending(null);
+    setAssistedSource("loaded");
+    setAssistedMode("playing");
+    setAssistedLaunchedOrder(order);
+    setKickPhaseStatus("GRID · LIVE TRANSITION ARMED");
+    lastPlaying.current = [outgoing.deck];
+    usedCrateTracks.current.add(outgoing.id);
+    usedCrateTracks.current.add(incoming.id);
+    setAssistedDecisions((items) => [
+      `MANUAL PLAY ARMED · ${outgoing.name} → ${incoming.name} · saved Preview automation will start at its silent preroll`,
+      ...items,
+    ].slice(0, ASSISTED_DECISION_LOG_LIMIT));
+    setAssistedStatus(`${outgoing.name} playing · ${incoming.name} transition armed from saved Preview coordinates`);
+    demoTimer.current = setInterval(demoTick, 80);
+    reportCrowdLiveEvent("transition.armed", {
+      source: "manual-play",
+      outgoingTrackId: outgoing.id,
+      incomingTrackId: incoming.id,
+      outgoingDeck: outgoing.deck,
+      incomingDeck: incoming.deck,
+      outgoingTime: outgoingAudio.currentTime,
+      silentPrerollAt,
+      mixOutAt: outgoing.exitRunway,
+      mixEndAt: outgoing.exitHandoff,
+      incomingPrerollAt: assistedIncomingPrerollTime(incoming),
+      timerMs: 80,
+    });
+    return true;
+  };
   const toggle = async (id: DeckId) => {
     endPitchHold(id, false);
     let audio = activeAudio(id);
@@ -7157,6 +7249,7 @@ export default function DjBooth() {
         volume: decksCurrent.current[id].volume,
       });
       lastPlaying.current = DECK_IDS.filter((deckId) => activeAudio(deckId) && !activeAudio(deckId)!.paused);
+      armSavedPreviewTransitionOnManualPlay(id, audio);
     } else {
       lastPlaying.current = DECK_IDS.filter((deckId) => activeAudio(deckId) && !activeAudio(deckId)!.paused);
       audio.pause();

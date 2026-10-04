@@ -80,6 +80,20 @@ test("Preview Apply creates the assisted watcher without moving live audio", () 
   assert.match(saveSource, /runtimeAfterSave && demoRuntime\.current === runtimeAfterSave[\s\S]*?demoTimer\.current = null;\s*demoRuntime\.current = null;/);
 });
 
+test("ordinary Play arms a saved Preview pair that was applied while stopped", () => {
+  const armSource = boothSource.match(/const armSavedPreviewTransitionOnManualPlay = \(id: DeckId, outgoingAudio: HTMLAudioElement\) => \{[\s\S]*?(?=  const toggle = async)/)?.[0] ?? "";
+  const toggleSource = boothSource.match(/const toggle = async \(id: DeckId\) => \{[\s\S]*?(?=  function endPitchHold)/)?.[0] ?? "";
+  assert.match(armSource, /preparedDemoCurrent\.current/);
+  assert.match(armSource, /prepared\.plan\.tracks\.length !== 2/);
+  assert.match(armSource, /transitionPreviewLiveArmDecision\(\{/);
+  assert.match(armSource, /incomingReady: mediaReadyForTrack\(incomingAudio, incomingState\.track\)/);
+  assert.match(armSource, /incomingStopped: Boolean\(incomingAudio\?\.paused/);
+  assert.match(armSource, /demoRuntime\.current = \{[\s\S]*?stage: "primary"[\s\S]*?busy: false/);
+  assert.match(armSource, /demoTimer\.current = setInterval\(demoTick, 80\)/);
+  assert.match(armSource, /source: "manual-play"/);
+  assert.ok(toggleSource.indexOf("await audio.play()") < toggleSource.indexOf("armSavedPreviewTransitionOnManualPlay(id, audio)"));
+});
+
 test("Preview opens its monitor and returns to the booth after a safe Apply", () => {
   const openSource = boothSource.match(/const openTransitionPreview = \(\) => \{[\s\S]*?(?=  const closeTransitionPreview)/)?.[0] ?? "";
   const saveSource = boothSource.match(/const saveTransitionPreview = async \(\) => \{[\s\S]*?(?=  const loadedThreeTuneSequenceReady)/)?.[0] ?? "";
