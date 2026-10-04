@@ -28,7 +28,7 @@ import { audibleRunwayPhraseEdge, cueLockedTempoRate, findEntryCueCandidates, pl
 import { gridDisagreement, mixOutWithheldReason, predictedEntryCue, predictedMixOutCue } from "../../lib/cue-prediction";
 import { gridCheckOutcome, gridCheckTicks, gridCheckWindow, nextGridCheck, type GridCheckItem, type GridCheckRecord, type GridCheckVerdict } from "../../lib/grid-check";
 import { assessGridRetentionQuality } from "../../lib/grid-quality";
-import { kickPhaseColoursForRoles } from "../../lib/kick-phase-colour";
+import { previewPhaseColoursForRoles } from "../../lib/kick-phase-colour";
 import { emptyKickPhaseMonitor, kickPhaseReportLabel, observeKickAgainstKick, updateKickPhaseMonitor, type KickPhaseMonitorState, type KickPhaseStatus } from "../../lib/kick-phase-monitor";
 import { assessLiveCandidate, assessLiveOpenerExit, liveCandidateAccepted, selectLockedOutgoingCue, type LiveAnalysis, type LockedOutgoingCue } from "../../lib/live-crate";
 import { liveCueAwareDeadlineMode, nextTuneSelectionPhase, nextTuneSelectionSecondsRemaining } from "../../lib/live-deadline";
@@ -3910,22 +3910,30 @@ export default function DjBooth() {
         }
         if (!outgoingCut && !next.paused && !next.seeking) {
           // Read the kicks against each other for the playhead colour only.
-          const kickUpdate = updateKickPhaseMonitor(previewKickMonitor, observeKickAgainstKick(
+          const kickObservation = observeKickAgainstKick(
             { currentTime: current.currentTime, playbackRate: current.playbackRate, beats: preview.outgoingAnalysis.beats },
             { currentTime: next.currentTime, playbackRate: next.playbackRate, beats: preview.incomingAnalysis.beats },
-          ));
+          );
+          const kickUpdate = updateKickPhaseMonitor(previewKickMonitor, kickObservation);
           previewKickMonitor = kickUpdate.state;
-          if (kickUpdate.report.status !== previewKickStatus) {
-            previewKickStatus = kickUpdate.report.status;
-            // Written to refs, never to state: this interval must not
-            // rerender the booth, so the playheads pick the colour up in their
-            // own animation frame exactly as they do the playhead position.
-            const headColours = kickPhaseColoursForRoles(previewKickStatus);
+          previewKickStatus = kickUpdate.report.status;
+          const targetTime = alignedIncomingTime(current.currentTime);
+          const phaseError = next.currentTime - targetTime;
+          // Trusted kick phase wins when it can name a direction. Where either
+          // analysis has no usable kick at this point, the exact confirmed
+          // window mapping still gives us a real grid-phase reading. Written
+          // to refs, never state: this interval must not rerender the booth.
+          const headColours = previewPhaseColoursForRoles(
+            previewKickStatus,
+            phaseError,
+            ASSISTED_GRID_GREEN_TOLERANCE_SECONDS,
+            Boolean(kickObservation),
+          );
+          if (headColours.outgoing !== transitionPreviewPhaseColourOutgoing.current
+            || headColours.incoming !== transitionPreviewPhaseColourIncoming.current) {
             transitionPreviewPhaseColourOutgoing.current = headColours.outgoing;
             transitionPreviewPhaseColourIncoming.current = headColours.incoming;
           }
-          const targetTime = alignedIncomingTime(current.currentTime);
-          const phaseError = next.currentTime - targetTime;
           if (beat >= overlapNextSampleBeat) {
             overlapNextSampleBeat = beat + PREVIEW_OVERLAP_SAMPLE_EVERY_BEATS;
             overlapSamples.push({ beat, phaseErrorMs: Math.round(phaseError * 1000 * 10) / 10 });

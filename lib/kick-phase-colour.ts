@@ -28,6 +28,8 @@ export const KICK_PHASE_UNKNOWN = "#8fa3ad";
 export const KICK_PHASE_SLOW_BLUE = KICK_PHASE_EARLY;
 export const KICK_PHASE_FAST_RED = KICK_PHASE_LATE;
 
+export type PhaseColoursForRoles = { outgoing: string | null; incoming: string | null };
+
 /**
  * Per-playhead colours (DJ, 30 Aug 2026): "the moving playhead should be
  * green when tunes in time; if tunes not in time, the slow playhead should
@@ -40,7 +42,7 @@ export const KICK_PHASE_FAST_RED = KICK_PHASE_LATE;
  * measuring) stays neutral rather than implying a direction the
  * measurement cannot support; anything else makes no claim (white head).
  */
-export function kickPhaseColoursForRoles(status: KickPhaseStatus | null | undefined): { outgoing: string | null; incoming: string | null } {
+export function kickPhaseColoursForRoles(status: KickPhaseStatus | null | undefined): PhaseColoursForRoles {
   switch (status) {
     case "aligned":
       return { outgoing: KICK_PHASE_ALIGNED, incoming: KICK_PHASE_ALIGNED };
@@ -55,6 +57,40 @@ export function kickPhaseColoursForRoles(status: KickPhaseStatus | null | undefi
     default:
       return { outgoing: null, incoming: null };
   }
+}
+
+/**
+ * Colours for the two moving Preview Mix playheads.
+ *
+ * A trusted kick verdict is the most useful reading, but some perfectly valid
+ * mix windows contain no kick attacks that the analyser is willing to call
+ * verified. The two private players are still measured against the exact
+ * user-confirmed window mapping on every Preview Mix tick. Use that clock/grid
+ * phase while the kick reading is waiting or directionless so a running pair
+ * never silently falls back to white.
+ *
+ * Positive phase error means the incoming player is farther through its source
+ * than the literal mapping expects: incoming is the fast/red head and outgoing
+ * is the slow/blue head. Negative error reverses those roles.
+ */
+export function previewPhaseColoursForRoles(
+  kickStatus: KickPhaseStatus | null | undefined,
+  phaseErrorSeconds: number,
+  greenToleranceSeconds: number,
+  hasCurrentKickEvidence = true,
+): PhaseColoursForRoles {
+  if (hasCurrentKickEvidence
+    && (kickStatus === "aligned" || kickStatus === "incoming-early" || kickStatus === "incoming-late")) {
+    return kickPhaseColoursForRoles(kickStatus);
+  }
+  if (!Number.isFinite(phaseErrorSeconds)) return { outgoing: null, incoming: null };
+  const tolerance = Math.max(0, Number.isFinite(greenToleranceSeconds) ? greenToleranceSeconds : 0);
+  if (Math.abs(phaseErrorSeconds) <= tolerance) {
+    return { outgoing: KICK_PHASE_ALIGNED, incoming: KICK_PHASE_ALIGNED };
+  }
+  return phaseErrorSeconds > 0
+    ? { outgoing: KICK_PHASE_SLOW_BLUE, incoming: KICK_PHASE_FAST_RED }
+    : { outgoing: KICK_PHASE_FAST_RED, incoming: KICK_PHASE_SLOW_BLUE };
 }
 
 export function kickPhaseColour(status: KickPhaseStatus | null | undefined): KickPhaseColour {
