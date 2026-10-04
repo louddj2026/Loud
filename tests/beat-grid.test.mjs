@@ -271,6 +271,25 @@ test("one anomalous model window cannot create a separate intro tempo", () => {
     "an unconfirmed intro estimate must not create a boundary jump");
 });
 
+test("a kickless 127 BPM intro cannot bend a 145 BPM track grid", () => {
+  const bpm = 145;
+  const fixture = syntheticTrack(bpm, { duration: 96, offset: .295 });
+  fixture.samples.fill(0, 0, Math.floor(20 * fixture.sampleRate));
+  const modelBeats = [];
+  for (const [start, end, localBpm, offset] of [[0, 16, 127.59, .22], [16, 96, bpm, .295]]) {
+    for (let time = start + offset; time < end; time += 60 / localBpm) {
+      modelBeats.push(Math.round(time * 50) / 50);
+    }
+  }
+  const analysis = analyzeBeatGrid(fixture.samples, fixture.sampleRate, { modelBeats });
+  assert.equal(analysis.tempoSections.length, 1, JSON.stringify({ sections: analysis.tempoSections, evidence: analysis.tempoSectionEvidence }));
+  assert.ok(Math.abs(analysis.tempoSections[0].bpm - bpm) < .1, JSON.stringify(analysis.tempoSections));
+  assert.equal(analysis.tempoSectionEvidence?.[0].decision, "unconfirmed-edge");
+  const intervals = analysis.beats.slice(1).map((beat, index) => beat.time - analysis.beats[index].time);
+  assert.ok(Math.max(...intervals.map(interval => Math.abs(interval - 60 / bpm))) < .012,
+    "a kickless false intro must not change the beat spacing or leave a boundary jump");
+});
+
 test("a short real tempo intro with independent support is preserved", () => {
   const sampleRate = 4000;
   const intro = syntheticTrack(120, { duration: 16, sampleRate, offset: .14 });
