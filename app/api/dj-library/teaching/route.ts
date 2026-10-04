@@ -39,7 +39,10 @@ type TeachingPostBody = TeachingEditBody & {
 type TeachingUndoRecord = {
   token: string;
   trackId: string;
-  analysis: TeachableAnalysis;
+  /** Legacy records stored the whole multi-megabyte analysis. New records keep
+   * only the placement field Apply can change; the current grid is preserved. */
+  analysis?: TeachableAnalysis;
+  teaching?: TeachableAnalysis["teaching"] | null;
   momentIds: number[];
   createdAt: string;
 };
@@ -47,7 +50,7 @@ type TeachingUndoRecord = {
 type TeachingBatchManifest = {
   batchId: string;
   createdAt: string;
-  entries: Array<{ id: string; undoToken: string }>;
+  entries: Array<{ id: string; undoToken: string; teaching: TeachableAnalysis["teaching"] | null }>;
 };
 
 type PreparedTeachingEdit = {
@@ -168,11 +171,10 @@ async function stageTeachingBatch(batchId: string, edits: readonly PreparedTeach
   const manifest: TeachingBatchManifest = {
     batchId,
     createdAt,
-    entries: edits.map((edit) => ({ id: edit.id, undoToken: edit.undoToken })),
+    entries: edits.map((edit) => ({ id: edit.id, undoToken: edit.undoToken, teaching: edit.analysis.teaching ?? null })),
   };
   try {
     for (const edit of edits) {
-      await durableWriteFile(path.join(directory, `original-${edit.id}.json`), JSON.stringify(edit.analysis));
       await durableWriteFile(path.join(directory, `corrected-${edit.id}.json`), JSON.stringify(edit.corrected));
     }
     await durableWriteFile(path.join(directory, "manifest.json"), JSON.stringify(manifest));
@@ -240,7 +242,7 @@ export async function POST(request: Request) {
       await recoverPendingTeachingBatch();
       if (body.action === "transition-pair") return await saveTransitionPair(body.entries ?? []);
       const prepared = await prepareTeachingEdit(body);
-      const undoRecord: TeachingUndoRecord = { token: prepared.undoToken, trackId: prepared.id, analysis: prepared.analysis, momentIds: [], createdAt: new Date().toISOString() };
+      const undoRecord: TeachingUndoRecord = { token: prepared.undoToken, trackId: prepared.id, teaching: prepared.analysis.teaching ?? null, momentIds: [], createdAt: new Date().toISOString() };
       await mkdir(undoDirectory, { recursive: true });
       await writeFile(undoFile(prepared.id), JSON.stringify(undoRecord));
       await writeFile(prepared.file, JSON.stringify(prepared.corrected));
@@ -282,7 +284,9 @@ export async function DELETE(request: Request) {
         return Response.json({ error: "That cue is no longer the latest saved edit" }, { status: 409 });
       }
       const { file: analysisFile, analysis: currentAnalysis } = await loadAnalysis(id);
-      const restored = withPlacementMetadata(currentAnalysis, record.analysis);
+      const restored = withPlacementMetadata(currentAnalysis, {
+        teaching: record.analysis?.teaching ?? record.teaching ?? undefined,
+      });
       await writeFile(analysisFile, JSON.stringify(restored));
       await rememberCompactDjRecord(track, restored as Parameters<typeof rememberCompactDjRecord>[1]);
       await forgetTeachingMoments(id, record.momentIds);

@@ -12,7 +12,8 @@ const teachingBatchDirectory = path.join(undoDirectory, "batches");
 type TeachingUndoRecord = {
   token: string;
   trackId: string;
-  analysis: TeachableAnalysis;
+  analysis?: TeachableAnalysis;
+  teaching?: TeachableAnalysis["teaching"] | null;
   momentIds: number[];
   createdAt: string;
 };
@@ -20,7 +21,7 @@ type TeachingUndoRecord = {
 type TeachingBatchManifest = {
   batchId: string;
   createdAt: string;
-  entries: Array<{ id: string; undoToken: string }>;
+  entries: Array<{ id: string; undoToken: string; teaching?: TeachableAnalysis["teaching"] | null }>;
 };
 
 export function teachingBatchPath(batchId: string) {
@@ -83,8 +84,15 @@ export async function recoverPendingTeachingBatch() {
   for (const entry of manifest.entries) {
     const momentIds = pending.momentIdsByTrack[entry.id];
     if (!Array.isArray(momentIds)) throw new Error(`The pending transition pair is missing ${entry.id}'s teaching moments`);
-    const original = JSON.parse(await readFile(path.join(directory, `original-${entry.id}.json`), "utf8")) as TeachableAnalysis;
-    const undoRecord: TeachingUndoRecord = { token: entry.undoToken, trackId: entry.id, analysis: original, momentIds, createdAt: manifest.createdAt };
+    // New batches carry the only mutable field in their manifest. Fall back to
+    // the former full-analysis staging file so a crash from an older build can
+    // still recover after an update.
+    const legacyOriginal = Object.prototype.hasOwnProperty.call(entry, "teaching")
+      ? null
+      : JSON.parse(await readFile(path.join(directory, `original-${entry.id}.json`), "utf8")) as TeachableAnalysis;
+    const undoRecord: TeachingUndoRecord = legacyOriginal
+      ? { token: entry.undoToken, trackId: entry.id, analysis: legacyOriginal, momentIds, createdAt: manifest.createdAt }
+      : { token: entry.undoToken, trackId: entry.id, teaching: entry.teaching ?? null, momentIds, createdAt: manifest.createdAt };
     await durableWriteFile(path.join(directory, `undo-${entry.id}.json`), JSON.stringify(undoRecord));
   }
   await syncDirectoryBestEffort(directory);

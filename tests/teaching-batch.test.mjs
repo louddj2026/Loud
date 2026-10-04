@@ -53,9 +53,12 @@ test("compact records, teaching moments, and the recovery marker share one SQLit
 
 test("staged files are flushed and pending pairs recover before booth analysis reads", () => {
   const stageSource = routeSource.match(/async function stageTeachingBatch[\s\S]*?(?=\nasync function saveTransitionPair)/)?.[0] ?? "";
-  assert.match(stageSource, /durableWriteFile\(path\.join\(directory, `original-/);
+  assert.doesNotMatch(stageSource, /durableWriteFile\(path\.join\(directory, `original-/);
   assert.match(stageSource, /durableWriteFile\(path\.join\(directory, `corrected-/);
   assert.match(stageSource, /durableWriteFile\(path\.join\(directory, "manifest\.json"/);
+  assert.match(stageSource, /teaching: edit\.analysis\.teaching \?\? null/);
+  assert.match(recoverySource, /Object\.prototype\.hasOwnProperty\.call\(entry, "teaching"\)/);
+  assert.match(recoverySource, /`original-\$\{entry\.id\}\.json`/);
   assert.match(recoverySource, /await handle\.sync\(\)/);
   assert.match(recoverySource, /await syncFileForDurability\(temporary\)/);
   assert.match(recoverySource, /await rename\(temporary, destination\)/);

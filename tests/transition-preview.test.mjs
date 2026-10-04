@@ -103,6 +103,20 @@ test("Preview opens its monitor and returns to the booth after a safe Apply", ()
   assert.match(saveSource, /if \(returnToBoothAfterApply\) closeTransitionPreview\(\)/);
 });
 
+test("Preview startup and Apply cannot race each other", () => {
+  const trackPreviewSource = boothSource.match(/const playTransitionPreviewTrack = async[\s\S]*?(?=  const startTransitionPreviewCue)/)?.[0] ?? "";
+  const mixPreviewSource = boothSource.match(/const playTransitionPreviewMix = async[\s\S]*?(?=  const snapTransitionPreviewTime)/)?.[0] ?? "";
+  const saveSource = boothSource.match(/const saveTransitionPreview = async \(\) => \{[\s\S]*?(?=  const loadedThreeTuneSequenceReady)/)?.[0] ?? "";
+  assert.match(trackPreviewSource, /preview\.saving \|\| transitionPreviewSaveInFlight\.current/);
+  assert.match(trackPreviewSource, /auditionPending: role/);
+  assert.match(trackPreviewSource, /audition: role, auditionPending: null/);
+  assert.match(mixPreviewSource, /preview\.saving \|\| transitionPreviewSaveInFlight\.current/);
+  assert.match(mixPreviewSource, /auditionPending: "mix"/);
+  assert.match(mixPreviewSource, /audition: "mix", auditionPending: null/);
+  assert.match(saveSource, /if \(preview\.auditionPending\)/);
+  assert.match(boothSource, /disabled=\{transitionPreview\.saving \|\| transitionPreview\.auditionPending !== null \|\| !transitionPreviewCanCommit/);
+});
+
 test("the incoming channel is muted before its silent preroll player starts", () => {
   const runwaySource = boothSource.match(/const beginDemoRunway = async \(runtime: DemoRuntime\) => \{[\s\S]*?(?=  const performDemoSkip)/)?.[0] ?? "";
   const muteAt = runwaySource.indexOf("incomingGraph.channel.gain.setValueAtTime(0");

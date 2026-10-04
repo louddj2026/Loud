@@ -195,6 +195,7 @@ type TransitionPreviewState = {
   selectionRole: TransitionPreviewRole | null;
   cueHistory: TransitionPreviewCueSnapshot[];
   audition: TransitionPreviewRole | "mix" | null;
+  auditionPending: TransitionPreviewRole | "mix" | null;
   saving: boolean;
   status: string;
 };
@@ -3527,6 +3528,7 @@ export default function DjBooth() {
     setTransitionPreview((current) => current ? {
       ...current,
       audition: null,
+      auditionPending: null,
       ...(outgoingTime === undefined ? {} : { outgoingTime }),
       ...(incomingTime === undefined ? {} : { incomingTime }),
       status: status ?? current.status,
@@ -3564,6 +3566,10 @@ export default function DjBooth() {
   const playTransitionPreviewTrack = async (role: TransitionPreviewRole, requestedTime?: number, restart = false) => {
     const preview = transitionPreview;
     if (!preview) return;
+    if (preview.saving || transitionPreviewSaveInFlight.current) {
+      setTransitionPreview((current) => current ? { ...current, status: "Apply is still saving · Preview will be available when it finishes" } : current);
+      return;
+    }
     // The transport button toggles; auditioning a point on the waveform always
     // restarts from that point, so a second click jumps rather than stopping.
     if (preview.audition === role && !restart) { stopTransitionPreviewPlayback("Private track preview paused"); return; }
@@ -3572,8 +3578,14 @@ export default function DjBooth() {
     const track = role === "outgoing" ? preview.outgoingTrack : preview.incomingTrack;
     const time = requestedTime !== undefined ? snapTransitionPreviewTime(preview, role, requestedTime) : (role === "outgoing" ? preview.outgoingTime : preview.incomingTime);
     if (requestedTime !== undefined) seekTransitionPreview(role, time);
-    setTransitionPreview((current) => current ? { ...current, status: `Loading ${track.name}'s private player on demandâ€¦` } : current);
-    const audio = await prepareTransitionPreviewAudio(role, track, time);
+    setTransitionPreview((current) => current ? { ...current, auditionPending: role, status: `Starting ${track.name}'s private player…` } : current);
+    let audio: HTMLAudioElement;
+    try {
+      audio = await prepareTransitionPreviewAudio(role, track, time);
+    } catch (error) {
+      if (token === transitionPreviewCueToken.current) setTransitionPreview((current) => current ? { ...current, auditionPending: null } : current);
+      throw error;
+    }
     if (token !== transitionPreviewCueToken.current) return;
     const graph = await ensureTransitionPreviewGraph(role);
     if (token !== transitionPreviewCueToken.current) return;
@@ -3584,7 +3596,7 @@ export default function DjBooth() {
     if (token !== transitionPreviewCueToken.current) { audio.pause(); return; }
     reportClientDiagnostic("transition-preview-track-started", { role, trackId: track.id, time });
     reportCrowdLiveEvent("preview.track.started", { role, trackId: track.id, time, playbackRate: audio.playbackRate, outputGain: .72 });
-    setTransitionPreview((current) => current ? { ...current, audition: role, status: `${role === "outgoing" ? "Playing-track" : "Incoming-track"} private preview · Preview Monitor` } : current);
+    setTransitionPreview((current) => current ? { ...current, audition: role, auditionPending: null, status: `${role === "outgoing" ? "Playing-track" : "Incoming-track"} private preview · Preview Monitor` } : current);
   };
   const startTransitionPreviewCue = async (role: TransitionPreviewRole, requestedTime?: number) => {
     const preview = transitionPreview;
@@ -3627,6 +3639,10 @@ export default function DjBooth() {
   const playTransitionPreviewMix = async (jump?: { role: TransitionPreviewRole; time: number }) => {
     const preview = transitionPreview;
     if (!preview) return;
+    if (preview.saving || transitionPreviewSaveInFlight.current) {
+      setTransitionPreview((current) => current ? { ...current, status: "Apply is still saving · Preview Mix will be available when it finishes" } : current);
+      return;
+    }
     if (preview.audition === "mix" && !jump) { stopTransitionPreviewPlayback("Transition preview paused"); return; }
     if (!transitionPreviewCanCommit(preview.outgoingWindow, preview.incomingWindow, preview.beats)) {
       const unsafeRate = transitionPreviewWindowReady(preview.outgoingWindow)
@@ -3643,7 +3659,7 @@ export default function DjBooth() {
     setPreviewMonitorRouting(true);
     stopTransitionPreviewPlayback();
     const token = ++transitionPreviewCueToken.current;
-    setTransitionPreview((current) => current ? { ...current, status: "Loading both private players on demandâ€¦" } : current);
+    setTransitionPreview((current) => current ? { ...current, auditionPending: "mix", status: "Starting both private players…" } : current);
     // 7 August timing baseline: the four selected coordinates stay literal.
     // Preview does not remap either full WAV or invent a second grid.
     const seekPoint = jump ? previewMixSeekPoint({
@@ -3776,7 +3792,7 @@ export default function DjBooth() {
       usedSafetyVolumeFallback: liveOutgoingState.volume <= .001,
       followsLiveCrowdClock,
     });
-    setTransitionPreview((current) => current ? { ...current, audition: "mix", outgoingTime: outgoingSeekTime, incomingTime: incomingSeekTime, status: seekPoint ? `Preview Mix playing together from beat ${seekPoint.beat.toFixed(2)} · Preview Monitor` : `Preview Mix running from ${TRANSITION_PREVIEW_LEAD_BEATS} of your ${preview.beats}-beat window beats before X · ${outgoingWindowBpm.toFixed(2)} → ${incomingWindowBpm.toFixed(2)} BPM · Preview Monitor` } : current);
+    setTransitionPreview((current) => current ? { ...current, audition: "mix", auditionPending: null, outgoingTime: outgoingSeekTime, incomingTime: incomingSeekTime, status: seekPoint ? `Preview Mix playing together from beat ${seekPoint.beat.toFixed(2)} · Preview Monitor` : `Preview Mix running from ${TRANSITION_PREVIEW_LEAD_BEATS} of your ${preview.beats}-beat window beats before X · ${outgoingWindowBpm.toFixed(2)} → ${incomingWindowBpm.toFixed(2)} BPM · Preview Monitor` } : current);
     let incomingLaunched = Boolean(seekPoint);
     let incomingLaunchPending = false;
     let mixOpened = Boolean(seekPoint);
@@ -8312,6 +8328,7 @@ export default function DjBooth() {
       incomingAnchor: transitionPreviewWindowReady(incomingWindow) ? "end" : null,
       cueHistory: [],
       audition: null,
+      auditionPending: null,
       saving: false,
       status: configurationOpen
         ? "Preview Monitor on · Saved mix windows loaded into the private sandbox · live transports untouched"
@@ -8953,6 +8970,10 @@ export default function DjBooth() {
   const saveTransitionPreview = async () => {
     const preview = transitionPreview;
     if (!preview || preview.saving || transitionPreviewSaveInFlight.current) return;
+    if (preview.auditionPending) {
+      setTransitionPreview((current) => current ? { ...current, status: "Wait for the private player to finish starting before applying the mix" } : current);
+      return;
+    }
     if (!transitionPreviewCanCommit(preview.outgoingWindow, preview.incomingWindow, preview.beats)) {
       setTransitionPreview((current) => current ? { ...current, status: "Both preview players need a START and END before the coordinates can be applied" } : current);
       return;
@@ -9004,6 +9025,10 @@ export default function DjBooth() {
       editingLiveTransition,
     });
     setTransitionPreview((current) => current ? { ...current, saving: true, status: "Applying private preview coordinates to the live track records…" } : current);
+    const applyStartedAt = performance.now();
+    const slowApplyStatus = window.setTimeout(() => {
+      setTransitionPreview((current) => current?.saving ? { ...current, status: "Still saving the two mix windows safely…" } : current);
+    }, 1_500);
     const saveWindowEntry = (track: Track, analysis: Analysis, purpose: ManualWindowPurpose, window: TransitionPreviewWindow) => ({
       id: track.id,
       kind: "loop-grid" as const,
@@ -9038,6 +9063,11 @@ export default function DjBooth() {
       if (!response.ok || !outgoingResult?.analysis || !incomingResult?.analysis) {
         throw new Error(payload.error ?? "The two Preview windows could not be saved together");
       }
+      reportCrowdLiveEvent("preview.apply.persisted", {
+        outgoingTrackId: preview.outgoingTrack.id,
+        incomingTrackId: preview.incomingTrack.id,
+        durationMs: Math.round(performance.now() - applyStartedAt),
+      });
       savedToLiveTracks = true;
       const outgoingAnalysis = outgoingResult.analysis!;
       const incomingAnalysis = incomingResult.analysis!;
@@ -9342,6 +9372,7 @@ export default function DjBooth() {
         setTransitionPreview((current) => current ? { ...current, saving: false, status: detail } : current);
       }
     } finally {
+      window.clearTimeout(slowApplyStatus);
       transitionPreviewSaveInFlight.current = false;
     }
   };
@@ -10066,7 +10097,7 @@ export default function DjBooth() {
       <div className="transition-preview-window-readout"><span>{outgoing ? "START MIX OUT" : "START MIX IN"} <b>{window.start === null ? "—" : preciseTimeLabel(window.start)}</b></span><span>{outgoing ? "FINISH MIX OUT" : "FINISH MIX IN"} <b>{window.end === null ? "—" : preciseTimeLabel(window.end)}</b></span></div>
       {transitionPreviewGridNotice(role)}
       <div className="transition-preview-transport-actions">
-        <button type="button" aria-pressed={transitionPreview.audition === role} aria-label={transitionPreview.audition === role ? `Pause ${previewLabel} preview` : `Play ${previewLabel} preview`} onClick={() => void playTransitionPreviewTrack(role).catch((error: unknown) => setTransitionPreview((current) => current ? { ...current, status: error instanceof Error ? error.message : "Private player could not start" } : current))}><span className="cdj-icon-bezel">{transitionPreview.audition === role ? <PauseTransportIcon /> : <PlayTransportIcon />}</span><small>PREVIEW MONITOR</small></button>
+        <button type="button" disabled={transitionPreview.saving || transitionPreview.auditionPending !== null} aria-pressed={transitionPreview.audition === role} aria-label={transitionPreview.auditionPending === role ? `Starting ${previewLabel} preview` : transitionPreview.audition === role ? `Pause ${previewLabel} preview` : `Play ${previewLabel} preview`} onClick={() => void playTransitionPreviewTrack(role).catch((error: unknown) => setTransitionPreview((current) => current ? { ...current, auditionPending: null, status: error instanceof Error ? error.message : "Private player could not start" } : current))}><span className="cdj-icon-bezel">{transitionPreview.audition === role ? <PauseTransportIcon /> : <PlayTransportIcon />}</span><small>{transitionPreview.auditionPending === role ? "STARTING…" : "PREVIEW MONITOR"}</small></button>
         {transitionPreviewCueButton(role)}
         <button type="button" className={`transition-preview-set-start ${anchorEdge === "start" ? "anchored" : ""}`} onPointerDown={(event) => markTransitionPreviewWindowFromPointer(event, role, "start")} onKeyDown={(event) => markTransitionPreviewWindowFromKeyboard(event, role, "start")}>{outgoing ? "START MIX OUT" : "START MIX IN"}<small>{anchorEdge === "start" ? "ANCHOR · AT WHITE PLAYHEAD" : `AT PLAYHEAD · +${transitionPreview.beats} BEATS SETS FINISH`}</small></button>
         <button type="button" className={`transition-preview-set-middle ${anchorEdge === "middle" ? "anchored" : ""}`} onPointerDown={(event) => markTransitionPreviewWindowFromPointer(event, role, "middle")} onKeyDown={(event) => markTransitionPreviewWindowFromKeyboard(event, role, "middle")}>{outgoing ? "MIDDLE MIX OUT" : "MIDDLE MIX IN"}<small>{anchorEdge === "middle" ? "MIDDLE ANCHORED · AT WHITE PLAYHEAD" : `AT PLAYHEAD · ${transitionPreview.beats / 2} BEATS EACH SIDE`}</small></button>
@@ -10110,7 +10141,7 @@ export default function DjBooth() {
           onKeyUp={(event) => { if (event.key === " " || event.key === "Enter") { event.preventDefault(); event.stopPropagation(); bendTransitionPreview(role, 0); } }}
           onBlur={() => bendTransitionPreview(role, 0)}
         ><span className="cdj-icon-bezel">{direction < 0 ? <PitchDownIcon /> : <PitchUpIcon />}</span><small>PITCH</small></button>)}
-        <button type="button" aria-pressed={transitionPreview.audition === role} aria-label={transitionPreview.audition === role ? `Pause ${outgoing ? "Mix Out" : "Mix In"} window preview` : `Play ${outgoing ? "Mix Out" : "Mix In"} window preview`} onClick={() => void playTransitionPreviewTrack(role, window.start!).catch((error: unknown) => setTransitionPreview((current) => current ? { ...current, status: error instanceof Error ? error.message : "Private window could not start" } : current))}><span className="cdj-icon-bezel">{transitionPreview.audition === role ? <PauseTransportIcon /> : <PlayTransportIcon />}</span></button>
+        <button type="button" disabled={transitionPreview.saving || transitionPreview.auditionPending !== null} aria-pressed={transitionPreview.audition === role} aria-label={transitionPreview.auditionPending === role ? `Starting ${outgoing ? "Mix Out" : "Mix In"} window preview` : transitionPreview.audition === role ? `Pause ${outgoing ? "Mix Out" : "Mix In"} window preview` : `Play ${outgoing ? "Mix Out" : "Mix In"} window preview`} onClick={() => void playTransitionPreviewTrack(role, window.start!).catch((error: unknown) => setTransitionPreview((current) => current ? { ...current, auditionPending: null, status: error instanceof Error ? error.message : "Private window could not start" } : current))}><span className="cdj-icon-bezel">{transitionPreview.audition === role ? <PauseTransportIcon /> : <PlayTransportIcon />}</span></button>
         {transitionPreviewCueButton(role, window.start!)}
         <button type="button" onClick={() => editTransitionPreviewWindow(role)}>EDIT CUES</button>
       </div></header>
@@ -10220,8 +10251,8 @@ export default function DjBooth() {
             pinned window above, then the bare verb. */}
         <button type="button" className={transitionPreview.replicate ? "transition-preview-replicate active" : "transition-preview-replicate"} disabled={replicateBusy || !transitionPreview.replicateSelection} onClick={() => { const selection = transitionPreview.replicateSelection; if (selection) void confirmTransitionPreviewReplicate(selection.role); }}>{replicateBusy ? "SPLICING…" : "REPLICATE"}</button>
         {transitionPreview.replicate && <button type="button" className="transition-preview-replicate-clear" onClick={clearTransitionPreviewReplicate}>CLEAR ×{transitionPreview.replicate.plan.copies}</button>}
-        {transitionPreview.configurationOpen && <button type="button" className="transition-preview-play-mix" disabled={!transitionPreviewCanCommit(transitionPreview.outgoingWindow, transitionPreview.incomingWindow, transitionPreview.beats)} onClick={() => void playTransitionPreviewMix().catch((error: unknown) => setTransitionPreview((current) => current ? { ...current, status: error instanceof Error ? error.message : "Private transition could not start" } : current))}>{transitionPreview.audition === "mix" ? `PAUSE ${transitionPreview.beats}-BEAT PREVIEW MIX` : `PREVIEW ${transitionPreview.beats}-BEAT MIX`}<small>FULL-WAVE CROWD SIMULATION · STARTS {TRANSITION_PREVIEW_LEAD_BEATS} BEATS BEFORE X · AUTO-OPENS PREVIEW MONITOR</small></button>}
-        {transitionPreview.configurationOpen && <button type="button" className="transition-preview-save" disabled={transitionPreview.saving || !transitionPreviewCanCommit(transitionPreview.outgoingWindow, transitionPreview.incomingWindow, transitionPreview.beats)} onClick={() => void saveTransitionPreview()}>{transitionPreview.saving ? "APPLYING…" : "APPLY WINDOWS + AUTOMATION TO LIVE TRACKS"}<small>DOES NOT SEEK OR PAUSE LIVE AUDIO</small></button>}
+        {transitionPreview.configurationOpen && <button type="button" className="transition-preview-play-mix" disabled={transitionPreview.saving || transitionPreview.auditionPending !== null || !transitionPreviewCanCommit(transitionPreview.outgoingWindow, transitionPreview.incomingWindow, transitionPreview.beats)} onClick={() => void playTransitionPreviewMix().catch((error: unknown) => setTransitionPreview((current) => current ? { ...current, auditionPending: null, status: error instanceof Error ? error.message : "Private transition could not start" } : current))}>{transitionPreview.auditionPending === "mix" ? "STARTING PREVIEW MIX…" : transitionPreview.audition === "mix" ? `PAUSE ${transitionPreview.beats}-BEAT PREVIEW MIX` : `PREVIEW ${transitionPreview.beats}-BEAT MIX`}<small>FULL-WAVE CROWD SIMULATION · STARTS {TRANSITION_PREVIEW_LEAD_BEATS} BEATS BEFORE X · AUTO-OPENS PREVIEW MONITOR</small></button>}
+        {transitionPreview.configurationOpen && <button type="button" className="transition-preview-save" disabled={transitionPreview.saving || transitionPreview.auditionPending !== null || !transitionPreviewCanCommit(transitionPreview.outgoingWindow, transitionPreview.incomingWindow, transitionPreview.beats)} onClick={() => void saveTransitionPreview()}>{transitionPreview.saving ? "APPLYING…" : "APPLY WINDOWS + AUTOMATION TO LIVE TRACKS"}<small>DOES NOT SEEK OR PAUSE LIVE AUDIO</small></button>}
       </div>}
       <div className="transition-preview-utility-actions"><button type="button" disabled={!transitionPreview.cueHistory.length} onClick={undoTransitionPreviewCue}>UNDO CUE</button><button type="button" onClick={resetTransitionPreviewCues}>RESET CUES</button><button type="button" onClick={closeTransitionPreview}>RETURN TO BOOTH</button></div>
     </section></div>}
