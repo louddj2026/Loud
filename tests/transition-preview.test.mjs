@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { assistedAutomationAtBeat, assistedCuePrerollStart, normaliseAssistedOverlapAutomation } from "../lib/assisted-playback.ts";
-import { TRANSITION_PREVIEW_LEAD_BEATS, TRANSITION_PREVIEW_LIVE_ARM_GUARD_SECONDS, selectTransitionPreviewPair, transitionPreviewBeat, transitionPreviewCanCommit, transitionPreviewCrowdAuditionVolume, transitionPreviewLiveArmDecision, transitionPreviewMarkTime, transitionPreviewTempoRate, transitionPreviewTempoRateIsSafe, transitionPreviewWindowReady } from "../lib/transition-preview.ts";
+import { TRANSITION_PREVIEW_LEAD_BEATS, TRANSITION_PREVIEW_LIVE_ARM_GUARD_SECONDS, selectTransitionPreviewPair, transitionPreviewBeat, transitionPreviewCanCommit, transitionPreviewCrowdAuditionVolume, transitionPreviewLiveArmDecision, transitionPreviewMarkTime, transitionPreviewOverlapResizePolicy, transitionPreviewTempoRate, transitionPreviewTempoRateIsSafe, transitionPreviewWindowReady } from "../lib/transition-preview.ts";
 import { focusWaveBufferedRange, focusWaveChunkPlan, focusWaveShouldRebase } from "../lib/waveform-gesture.ts";
 
 const boothSource = await readFile(new URL("../app/dj/dj-booth.tsx", import.meta.url), "utf8");
@@ -16,6 +16,13 @@ test("Preview Mix has exactly eight mapped beats of runway before automation", (
   const beats = Array.from({ length: 65 }, (_, time) => ({ time }));
   assert.equal(TRANSITION_PREVIEW_LEAD_BEATS, 8);
   assert.equal(assistedCuePrerollStart({ beats }, 40, 60, TRANSITION_PREVIEW_LEAD_BEATS), 32);
+});
+
+test("Mix Out length changes are not vetoed by an incompatible saved Mix In", () => {
+  assert.equal(transitionPreviewOverlapResizePolicy({ selectionRole: "outgoing", outgoingFits: true, incomingFits: false }), "clear-incoming");
+  assert.equal(transitionPreviewOverlapResizePolicy({ selectionRole: "outgoing", outgoingFits: false, incomingFits: true }), "reject");
+  assert.equal(transitionPreviewOverlapResizePolicy({ selectionRole: "incoming", outgoingFits: true, incomingFits: false }), "reject");
+  assert.equal(transitionPreviewOverlapResizePolicy({ selectionRole: null, outgoingFits: true, incomingFits: true }), "accept");
 });
 
 test("Preview Apply arms a future live pair when no runtime exists", () => {
@@ -514,6 +521,10 @@ test("changing Preview overlap beats re-places the free end and never the anchor
   assert.match(beatHandler, /const anchorTime = anchor === "middle" \? \(role === "outgoing" \? current\.outgoingMiddleAnchor : current\.incomingMiddleAnchor\) : anchor === "start" \? window\.start : window\.end;/);
   assert.match(beatHandler, /deriveTransitionPreviewWindowFor\(current, role, anchor, anchorTime, beats\)/);
   assert.match(beatHandler, /if \(!derived\.ok\) return \{ window/);
+  assert.match(beatHandler, /const resizePolicy = transitionPreviewOverlapResizePolicy/);
+  assert.match(beatHandler, /incomingWindow: clearIncompatibleIncoming \? \{ start: null, end: null \} : incoming\.window/);
+  assert.match(beatHandler, /incomingAnchor: clearIncompatibleIncoming \? null : current\.incomingAnchor/);
+  assert.match(beatHandler, /if \(resizePolicy === "reject"\)/);
   assert.match(boothSource, /const incomingRate = transitionPreviewTempoRate\(preview\.outgoingWindow, preview\.incomingWindow\)/);
   assert.doesNotMatch(boothSource, /const incomingRate = bpmMatchedTempoRate\(outgoingBpm, incomingBpm\)/);
   assert.match(boothSource, /onClick=\{\(\) => setTransitionPreviewOverlapBeats\(beats\)\}/);

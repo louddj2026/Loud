@@ -40,7 +40,7 @@ import { isKnownShortSample } from "../../lib/track-duration-policy";
 import { bassOwnerAtBeat, bassOwnershipSegments, toggleBassSwapBeat } from "../../lib/bass-ownership";
 import { nextBassOverride, overriddenBassLow } from "../../lib/bass-kill";
 import { type PreviewDraft } from "../../lib/preview-draft";
-import { TRANSITION_PREVIEW_LEAD_BEATS, deriveTransitionPreviewWindow, type TransitionPreviewAnchorEdge, transitionPreviewGridBeats, transitionPreviewSnapTime, TRANSITION_PREVIEW_LIVE_ARM_GUARD_SECONDS, TRANSITION_PREVIEW_SILENT_PREROLL_BEATS, selectTransitionPreviewPair, transitionPreviewBeat, transitionPreviewCanCommit, transitionPreviewCrowdAuditionVolume, transitionPreviewLiveArmDecision, transitionPreviewMarkTime, transitionPreviewTempoRate, transitionPreviewTempoRateIsSafe, transitionPreviewWindowReady, type TransitionPreviewLiveRuntimeState, type TransitionPreviewWindow } from "../../lib/transition-preview";
+import { TRANSITION_PREVIEW_LEAD_BEATS, deriveTransitionPreviewWindow, type TransitionPreviewAnchorEdge, transitionPreviewGridBeats, transitionPreviewSnapTime, TRANSITION_PREVIEW_LIVE_ARM_GUARD_SECONDS, TRANSITION_PREVIEW_SILENT_PREROLL_BEATS, selectTransitionPreviewPair, transitionPreviewBeat, transitionPreviewCanCommit, transitionPreviewCrowdAuditionVolume, transitionPreviewLiveArmDecision, transitionPreviewMarkTime, transitionPreviewOverlapResizePolicy, transitionPreviewTempoRate, transitionPreviewTempoRateIsSafe, transitionPreviewWindowReady, type TransitionPreviewLiveRuntimeState, type TransitionPreviewWindow } from "../../lib/transition-preview";
 import { previewMixSeekPoint, seekAndPlayPreviewPair } from "../../lib/preview-paired-seek";
 import { PREVIEW_OPEN_SEEK_TOLERANCE_SECONDS, PREVIEW_OVERLAP_RESEEK_SECONDS, PREVIEW_OVERLAP_SAMPLE_EVERY_BEATS, previewOpenSeekDecision, previewOverlapDriftSummary, type PreviewOverlapSample } from "../../lib/preview-overlap-lock";
 import { FOCUS_WAVE_DRAG_REBASE_FRACTION, FOCUS_WAVE_GLIDE_STOP_WINDOWS_PER_SECOND, FOCUS_WAVE_THROW_WINDOW_MS, focusWaveBufferedRange, focusWaveChunkPlan, focusWaveDragThresholdPx, focusWaveDragTime, focusWaveGlideStep, focusWaveShouldRebase, focusWaveThrowLimit, focusWaveThrowVelocity, type FocusWaveThrowSample } from "../../lib/waveform-gesture";
@@ -8917,16 +8917,30 @@ export default function DjBooth() {
       const outgoing = rebuild("outgoing");
       const incoming = rebuild("incoming");
       const refusals = [outgoing.note, incoming.note].filter(Boolean).join(" · ");
+      // While the DJ is deliberately rebuilding Mix Out, an older saved Mix
+      // In must not veto a length that fits the outgoing tune. Clear only the
+      // incompatible future window and make the DJ place it again on the next
+      // step. Once Mix Out has been accepted (or both windows are in the mix
+      // editor), changing the shared length remains atomic.
+      const resizePolicy = transitionPreviewOverlapResizePolicy({
+        selectionRole: current.selectionRole,
+        outgoingFits: !outgoing.note,
+        incomingFits: !incoming.note,
+      });
+      const clearIncompatibleIncoming = resizePolicy === "clear-incoming";
       // Atomic: if the new length does not fit EVERY anchored window, nothing
       // changes - not even the beat count. A half-switch would leave the grid
       // overlay and window-BPM maths counting the new length against spans
       // placed for the old one.
-      if (refusals) return { ...current, status: `${beats} beats does not fit - ${refusals} · kept ${current.beats}` };
+      if (resizePolicy === "reject") return { ...current, status: `${beats} beats does not fit - ${refusals} · kept ${current.beats}` };
       return {
         ...current,
         beats,
         outgoingWindow: outgoing.window,
-        incomingWindow: incoming.window,
+        incomingWindow: clearIncompatibleIncoming ? { start: null, end: null } : incoming.window,
+        incomingAnchor: clearIncompatibleIncoming ? null : current.incomingAnchor,
+        incomingMiddleAnchor: clearIncompatibleIncoming ? undefined : current.incomingMiddleAnchor,
+        configurationOpen: clearIncompatibleIncoming ? false : current.configurationOpen,
         automation: resizeAssistedOverlapAutomation(current.automation, beats),
         cueHistory: [...current.cueHistory, {
           beats: current.beats,
@@ -8939,7 +8953,9 @@ export default function DjBooth() {
           configurationOpen: current.configurationOpen,
           selectionRole: current.selectionRole,
         }],
-        status: refusals || `${beats}-beat overlap · every anchored window re-placed from the end you marked · the coloured span on the overall wave is the transition`,
+        status: clearIncompatibleIncoming
+          ? `${beats}-beat Mix Out selected · the older Mix In cannot use that length from its saved anchor, so place Mix In again on the next step`
+          : refusals || `${beats}-beat overlap · every anchored window re-placed from the end you marked · the coloured span on the overall wave is the transition`,
       };
     });
   };

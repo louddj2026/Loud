@@ -61,6 +61,16 @@ export function selectTransitionPreviewPair<TDeck, TPair>(input: {
   return input.playingNextPair;
 }
 
+export function transitionPreviewOverlapResizePolicy(input: {
+  selectionRole: "outgoing" | "incoming" | null;
+  outgoingFits: boolean;
+  incomingFits: boolean;
+}): "accept" | "clear-incoming" | "reject" {
+  if (!input.outgoingFits) return "reject";
+  if (!input.incomingFits) return input.selectionRole === "outgoing" ? "clear-incoming" : "reject";
+  return "accept";
+}
+
 export function transitionPreviewMarkTime(input: {
   playing: boolean;
   displayedTime?: number | null;
