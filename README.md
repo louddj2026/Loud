@@ -30,10 +30,13 @@ The complete analysis setup currently targets **Windows x64**. Use a current Edg
    Copy-Item .env.example .env.local
    pnpm setup:analysis
    pnpm check:analysis
-   pnpm dev
+   pnpm build
+   pnpm start:lan
    ```
 
 4. Open **http://localhost:3201/dj**. Use the booth's track upload/library controls to add music. LoudLink is at **http://localhost:3201/crowd**.
+
+`start:lan` runs the precompiled production server. Use it for listening or performing: opening LoudLink cannot trigger the development compiler and refresh the booth. It binds to the trusted local network so a phone can scan the QR code. Do not expose port 3201 directly to the public internet.
 
 **Beat/drum analysis is a required part of Loud.** Complete both analysis setup commands above before using the program. The small source download does not contain the required packages or model weights; the setup downloads them from upstream.
 
@@ -104,14 +107,15 @@ pnpm start
 
 Open **http://localhost:3200/dj**. Do not build while `pnpm dev` is using the same `.next` directory. This source version uses ordinary `next start`; the legacy `scripts/run-crowd2-production.ps1` is retained for an existing regression test and is not the launcher for this distribution.
 
-Both supplied launch commands bind to localhost. Publishing the source on GitHub does not host the running booth. LoudLink over a network needs an explicitly configured server/relay, appropriate HTTPS/WebRTC connectivity, and production DJ authentication (`CROWD_DJ_TOKEN`). Other local booth/file APIs are not a hardened public service; do not expose the whole booth to the internet as-is. Development permits anonymous DJ signalling and is for local development.
+`pnpm start` binds only to localhost. `pnpm start:lan` binds to the trusted local network and permits local anonymous DJ signalling unless `CROWD_DJ_TOKEN` is configured. Publishing the source on GitHub does not host the running booth. Internet-hosted LoudLink needs an explicitly configured server/relay, appropriate HTTPS/WebRTC connectivity, and production DJ authentication. Other local booth/file APIs are not a hardened public service; do not expose the whole booth to the internet as-is. Development is for code work and can refresh open pages while compiling routes.
 
 ## Commands
 
 | Command | Purpose |
 | --- | --- |
-| `pnpm dev` | Local development booth, port 3201 |
+| `pnpm dev` | Code-development server, port 3202; it may refresh pages while compiling routes |
 | `pnpm build` / `pnpm start` | Build / run locally on port 3200 |
+| `pnpm build` / `pnpm start:lan` | Build / run the stable booth and LoudLink on the trusted LAN, port 3201 |
 | `pnpm typecheck` | TypeScript checks; run after a build on a fresh checkout |
 | `pnpm test` | Full existing regression suite; known failures are documented below |
 | `pnpm check:fast` | Existing short regression suite |

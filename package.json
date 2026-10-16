@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev --webpack --hostname 127.0.0.1 -p 3201",
+    "dev": "next dev --webpack --hostname 127.0.0.1 -p 3202",
     "build": "next build",
     "typecheck": "tsc --noEmit",
     "check:fast": "node --experimental-strip-types --test tests/cue-markers.test.mjs tests/assisted-playback.test.mjs tests/assisted-search.test.mjs tests/transition-preview.test.mjs tests/kick-phase-monitor.test.mjs tests/crowd-link.test.mjs",
@@ -12,6 +12,7 @@
     "analyse": "node --experimental-strip-types scripts/analyse-library.mjs",
     "library:compact": "node --experimental-strip-types scripts/build-dj-library.mjs",
     "start": "next start --hostname 127.0.0.1 -p 3200",
+    "start:lan": "node scripts/start-lan.mjs",
     "setup:analysis": "node scripts/setup-analysis-runtime.mjs",
     "check:analysis": "node scripts/setup-analysis-runtime.mjs --check",
     "build:offline-installer": "node scripts/build-offline-windows-installer.mjs"
