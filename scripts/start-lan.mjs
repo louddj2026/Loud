@@ -18,6 +18,9 @@ const childEnv = {
   // when the user has not configured a private relay token. A configured
   // CROWD_DJ_TOKEN still takes precedence in the route's authentication.
   CROWD_ALLOW_ANONYMOUS_DJ: process.env.CROWD_ALLOW_ANONYMOUS_DJ ?? "1",
+  // The production server normalises request.url to its 0.0.0.0 bind address.
+  // Opt in only for this local-LAN launcher; hosted runtimes remain fail-closed.
+  CROWD_ENABLE_LAN_DISCOVERY: "1",
 };
 if (!childEnv.CROWD2_DIST_DIR && existsSync(".next-production/BUILD_ID")) {
   childEnv.CROWD2_DIST_DIR = ".next-production";

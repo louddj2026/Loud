@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canDiscoverLanAddress, crowdPhoneUrl, publicCrowdUrl, selectLanIpv4 } from "../lib/lan-link.ts";
+import { canDiscoverLanAddress, canServeLanDiscovery, crowdPhoneUrl, publicCrowdUrl, selectLanIpv4 } from "../lib/lan-link.ts";
 
 test("the phone link prefers the current private Wi-Fi address", () => {
   const address = selectLanIpv4({
@@ -31,6 +31,14 @@ test("QR discovery uses each installation's private interfaces and rejects inter
 test("public hosts cannot trigger LAN discovery", () => {
   for (const host of ["localhost", "127.0.0.1", "[::1]", "192.168.0.2"]) assert.equal(canDiscoverLanAddress(`http://${host}:3201/api/network`), true);
   for (const host of ["example.com", "203.0.113.5"]) assert.equal(canDiscoverLanAddress(`https://${host}/api/network`), false);
+});
+
+test("the local launcher can discover through a wildcard production bind", () => {
+  assert.equal(canServeLanDiscovery("http://0.0.0.0:3201/api/network", ["localhost:3201"], true), true);
+  assert.equal(canServeLanDiscovery("http://0.0.0.0:3201/api/network", ["192.168.0.2:3201"], true), true);
+  assert.equal(canServeLanDiscovery("http://0.0.0.0:3201/api/network", ["example.com"], true), false);
+  assert.equal(canServeLanDiscovery("http://0.0.0.0:3201/api/network", ["localhost:3201"], false), false);
+  assert.equal(canServeLanDiscovery("http://localhost:3201/api/network", ["localhost:3201"], false), true);
 });
 
 test("configured public QR URLs reject credentials, query tokens, fragments and IPs", () => {

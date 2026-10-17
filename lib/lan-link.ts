@@ -38,6 +38,11 @@ export function canDiscoverLanAddress(requestUrl: string) {
   } catch { return false; }
 }
 
+export function canServeLanDiscovery(requestUrl: string, requestHosts: string[], explicitlyEnabled = false) {
+  if (requestHosts.length === 0 || requestHosts.some((host) => !canDiscoverLanAddress(`http://${host}/`))) return false;
+  return explicitlyEnabled || canDiscoverLanAddress(requestUrl);
+}
+
 export function publicCrowdUrl(value: string | undefined) {
   if (!value?.trim()) return null;
   try {

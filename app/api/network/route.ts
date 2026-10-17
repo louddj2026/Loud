@@ -1,5 +1,5 @@
 import { networkInterfaces } from "node:os";
-import { canDiscoverLanAddress, crowdPhoneUrl, publicCrowdUrl, selectLanIpv4, type NetworkAddress } from "../../../lib/lan-link";
+import { canServeLanDiscovery, crowdPhoneUrl, publicCrowdUrl, selectLanIpv4, type NetworkAddress } from "../../../lib/lan-link";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,7 +16,10 @@ export async function GET(request: Request) {
   // Public deployments must never enumerate the host's private interfaces.
   // Invalid public configuration fails closed instead of exposing a LAN URL.
   const requestHosts = [request.headers.get("host"), request.headers.get("x-forwarded-host")].filter((host): host is string => host !== null);
-  const localRequest = canDiscoverLanAddress(request.url) && requestHosts.every((host) => canDiscoverLanAddress(`http://${host}/`));
+  // `next start --hostname 0.0.0.0` exposes the binding address as request.url,
+  // so the trusted local launcher opts in explicitly. Host headers still have
+  // to be loopback or private-LAN addresses.
+  const localRequest = canServeLanDiscovery(request.url, requestHosts, process.env.CROWD_ENABLE_LAN_DISCOVERY === "1");
   if (process.env.CROWD_PUBLIC_URL?.trim() || process.env.CROWD_DEPLOYMENT_ROLE === "edge" || !localRequest) {
     return Response.json({ address: null, crowdUrl: null, reachable: false }, { headers: { "Cache-Control": "no-store" } });
   }
