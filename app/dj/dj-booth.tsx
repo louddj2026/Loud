@@ -38,7 +38,7 @@ import { naturalTempoRate } from "../../lib/tempo-return";
 import { authoritativeManualTempoBpm, learnedCueCandidates, manualWindowPurposeAt, resolvedBpmAt, tempoRateAfterManualTempoTeaching, withoutStoredCuePlacements, withRestoredManualWindows, type ManualCyclePurpose, type ManualCycleTeaching, type TeachingProfile } from "../../lib/teaching";
 import { isKnownShortSample } from "../../lib/track-duration-policy";
 import { bassOwnerAtBeat, bassOwnershipSegments, toggleBassSwapBeat } from "../../lib/bass-ownership";
-import { nextBassOverride, overriddenBassLow } from "../../lib/bass-kill";
+import { nextBassOverride, overriddenBassLow, releaseTransitionBassOverrides } from "../../lib/bass-kill";
 import { type PreviewDraft } from "../../lib/preview-draft";
 import { TRANSITION_PREVIEW_LEAD_BEATS, deriveTransitionPreviewWindow, type TransitionPreviewAnchorEdge, transitionPreviewGridBeats, transitionPreviewSnapTime, TRANSITION_PREVIEW_LIVE_ARM_GUARD_SECONDS, TRANSITION_PREVIEW_SILENT_PREROLL_BEATS, selectTransitionPreviewPair, transitionPreviewBeat, transitionPreviewCanCommit, transitionPreviewCrowdAuditionVolume, transitionPreviewLiveArmDecision, transitionPreviewMarkTime, transitionPreviewOverlapResizePolicy, transitionPreviewTempoRate, transitionPreviewTempoRateIsSafe, transitionPreviewWindowReady, type TransitionPreviewLiveRuntimeState, type TransitionPreviewWindow } from "../../lib/transition-preview";
 import { previewMixSeekPoint, seekAndPlayPreviewPair } from "../../lib/preview-paired-seek";
@@ -4214,7 +4214,7 @@ export default function DjBooth() {
   // which replay performs through the transport and stab callbacks rather than
   // restoring as state — a state patch lights the button on a silent deck.
   const RECORDABLE_DECK_FIELDS = ["volume", "low", "mid", "high", "fx", "wet", "tempoRate", "cuePoint", "loopStart", "loopEnd", "loopActive", "loopSize", "cue"] as const;
-  const changeDeck = (id: DeckId, patch: Partial<DeckState>) => {
+  const changeDeck = (id: DeckId, patch: Partial<DeckState>, options: { automationOwnsBass?: boolean } = {}) => {
     if ("track" in patch && patch.track?.id !== decksCurrent.current[id].track?.id) {
       bufferedDecks.current[id]?.transport.dispose();delete bufferedDecks.current[id];
       const graph=graphs.current[id],ctx=context.current;if(graph&&ctx){graph.mainInput.gain.setValueAtTime(activeMedia.current[id]===0?1:0,ctx.currentTime);graph.shadowInput.gain.setValueAtTime(activeMedia.current[id]===1?1:0,ctx.currentTime);}
@@ -4223,7 +4223,7 @@ export default function DjBooth() {
       lowBeforeKill.current[id] = 0;
     }
     if (patch.low !== undefined) {
-      patch = { ...patch, low: overriddenBassLow(patch.low, liveBassOverride.current[id], lowBeforeKill.current[id]) };
+      patch = { ...patch, low: overriddenBassLow(patch.low, liveBassOverride.current[id], lowBeforeKill.current[id], options.automationOwnsBass) };
     }
     if (isRecording()) {
       const data: Record<string, unknown> = {};
@@ -4261,7 +4261,10 @@ export default function DjBooth() {
         high: patch.high ?? current.high,
       },
     );
-    changeDeck(id, { ...patch, ...resolvedEq });
+    // Transition automation is the final authority for bass ownership. A
+    // manual kill/live press is immediate, but cannot block the programmed
+    // outgoing cut or incoming opening on a later automation tick.
+    changeDeck(id, { ...patch, ...resolvedEq }, { automationOwnsBass: true });
   };
   const changeDeckFromBooth = (id: DeckId, patch: Partial<DeckState>) => {
     if (patch.low !== undefined) delete liveBassOverride.current[id];
@@ -5206,6 +5209,10 @@ export default function DjBooth() {
       runtime.incomingRestore = undefined;
     }
     scheduleNaturalTempoReturn(incoming.deck, incoming);
+    // Manual kill/live presses own Low for this transition only. Keeping an
+    // old "live" override after the handoff makes the now-primary deck immune
+    // to the next transition's outgoing bass cut.
+    const releasedBassOverrides = releaseTransitionBassOverrides(liveBassOverride.current, [outgoing.deck, incoming.deck]);
     reportCrowdLiveEvent("transition.completed", {
       mode: assistedPlaying.current ? "assisted" : liveRunning.current ? "live" : "demo",
       transitionIndex: runtime.transitionIndex,
@@ -5215,6 +5222,7 @@ export default function DjBooth() {
       incomingDeck: incoming.deck,
       incomingTime: activeAudio(incoming.deck)?.currentTime,
       incomingRate: activeAudio(incoming.deck)?.playbackRate,
+      releasedBassOverrides,
     });
     if (liveRunning.current) {
       if (demoTimer.current) clearInterval(demoTimer.current);
