@@ -27,7 +27,6 @@ export function nextBassOverride(held: BassOverride | undefined, currentLow: num
   return held === "kill" || (held === undefined && currentLow <= -59) ? "live" : "kill";
 }
 
-export function overriddenBassLow(curveLow: number, held: BassOverride | undefined, restoredLow = 0, automationOwns = false): number {
-  if (automationOwns) return curveLow;
+export function overriddenBassLow(curveLow: number, held: BassOverride | undefined, restoredLow = 0): number {
   return held === "kill" ? -60 : held === "live" ? restoredLow : curveLow;
 }

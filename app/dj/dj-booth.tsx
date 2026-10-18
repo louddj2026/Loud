@@ -37,7 +37,7 @@ import { runupGridDiagnostics } from "../../lib/runup-grid";
 import { naturalTempoRate } from "../../lib/tempo-return";
 import { authoritativeManualTempoBpm, learnedCueCandidates, manualWindowPurposeAt, resolvedBpmAt, tempoRateAfterManualTempoTeaching, withoutStoredCuePlacements, withRestoredManualWindows, type ManualCyclePurpose, type ManualCycleTeaching, type TeachingProfile } from "../../lib/teaching";
 import { isKnownShortSample } from "../../lib/track-duration-policy";
-import { bassOwnerAtBeat, bassOwnershipSegments, toggleBassSwapBeat } from "../../lib/bass-ownership";
+import { bassOwnerAtBeat, bassOwnershipSegments, latestStartedBassSwapBeat, toggleBassSwapBeat } from "../../lib/bass-ownership";
 import { nextBassOverride, overriddenBassLow, releaseTransitionBassOverrides } from "../../lib/bass-kill";
 import { type PreviewDraft } from "../../lib/preview-draft";
 import { TRANSITION_PREVIEW_LEAD_BEATS, deriveTransitionPreviewWindow, type TransitionPreviewAnchorEdge, transitionPreviewGridBeats, transitionPreviewSnapTime, TRANSITION_PREVIEW_LIVE_ARM_GUARD_SECONDS, TRANSITION_PREVIEW_SILENT_PREROLL_BEATS, selectTransitionPreviewPair, transitionPreviewBeat, transitionPreviewCanCommit, transitionPreviewCrowdAuditionVolume, transitionPreviewLiveArmDecision, transitionPreviewMarkTime, transitionPreviewOverlapResizePolicy, transitionPreviewTempoRate, transitionPreviewTempoRateIsSafe, transitionPreviewWindowReady, type TransitionPreviewLiveRuntimeState, type TransitionPreviewWindow } from "../../lib/transition-preview";
@@ -76,7 +76,7 @@ type DemoRuntime = { prepared: PreparedDemo; transitionIndex: number; stage: Dem
    * run backwards through a loop pass; `loopWrapMemo` is last tick's
    * element time per deck, for wrap detection.
    */
-  loopExtensionBeats?: number; loopExtensionOutgoingSeconds?: number; loopExtensionIncomingSeconds?: number; loopWrapMemo?: Partial<Record<DeckId, number>>; virtualOutgoingTime?: number };
+  loopExtensionBeats?: number; loopExtensionOutgoingSeconds?: number; loopExtensionIncomingSeconds?: number; loopWrapMemo?: Partial<Record<DeckId, number>>; virtualOutgoingTime?: number; lastBassOverrideReleaseBeat?: number };
 type CrateAlbum = { name: string; count: number };
 type CrateScanState = {
   status: "idle" | "running" | "paused" | "complete" | "error";
@@ -4214,7 +4214,7 @@ export default function DjBooth() {
   // which replay performs through the transport and stab callbacks rather than
   // restoring as state — a state patch lights the button on a silent deck.
   const RECORDABLE_DECK_FIELDS = ["volume", "low", "mid", "high", "fx", "wet", "tempoRate", "cuePoint", "loopStart", "loopEnd", "loopActive", "loopSize", "cue"] as const;
-  const changeDeck = (id: DeckId, patch: Partial<DeckState>, options: { automationOwnsBass?: boolean } = {}) => {
+  const changeDeck = (id: DeckId, patch: Partial<DeckState>) => {
     if ("track" in patch && patch.track?.id !== decksCurrent.current[id].track?.id) {
       bufferedDecks.current[id]?.transport.dispose();delete bufferedDecks.current[id];
       const graph=graphs.current[id],ctx=context.current;if(graph&&ctx){graph.mainInput.gain.setValueAtTime(activeMedia.current[id]===0?1:0,ctx.currentTime);graph.shadowInput.gain.setValueAtTime(activeMedia.current[id]===1?1:0,ctx.currentTime);}
@@ -4223,7 +4223,7 @@ export default function DjBooth() {
       lowBeforeKill.current[id] = 0;
     }
     if (patch.low !== undefined) {
-      patch = { ...patch, low: overriddenBassLow(patch.low, liveBassOverride.current[id], lowBeforeKill.current[id], options.automationOwnsBass) };
+      patch = { ...patch, low: overriddenBassLow(patch.low, liveBassOverride.current[id], lowBeforeKill.current[id]) };
     }
     if (isRecording()) {
       const data: Record<string, unknown> = {};
@@ -4261,10 +4261,7 @@ export default function DjBooth() {
         high: patch.high ?? current.high,
       },
     );
-    // Transition automation is the final authority for bass ownership. A
-    // manual kill/live press is immediate, but cannot block the programmed
-    // outgoing cut or incoming opening on a later automation tick.
-    changeDeck(id, { ...patch, ...resolvedEq }, { automationOwnsBass: true });
+    changeDeck(id, { ...patch, ...resolvedEq });
   };
   const changeDeckFromBooth = (id: DeckId, patch: Partial<DeckState>) => {
     if (patch.low !== undefined) delete liveBassOverride.current[id];
@@ -4988,6 +4985,7 @@ export default function DjBooth() {
     runtime.prerollReanchorDone = false;
     runtime.cueOpenScheduled = false;
     runtime.kickPhaseMonitor = emptyKickPhaseMonitor();
+    runtime.lastBassOverrideReleaseBeat = undefined;
     runtime.loopExtensionBeats = 0;
     runtime.loopExtensionOutgoingSeconds = 0;
     runtime.loopExtensionIncomingSeconds = 0;
@@ -5442,6 +5440,7 @@ export default function DjBooth() {
           if (Math.abs(phaseError) > ASSISTED_GRID_GREEN_TOLERANCE_SECONDS) incomingAudio.currentTime = targetTime;
           setDeckRate(incoming.deck, baseRate);
           runtime.runwayAudible = true;
+          const entryBassOverrides = releaseTransitionBassOverrides(liveBassOverride.current, [outgoing.deck, incoming.deck]);
           const automationStart = assistedAutomationAtBeat(automation, 0);
           const fixedGain = runtime.gainDecision;
           changeDeckWithAutomatedEq(runtime, outgoing.deck, { low: automationStart.outgoingLow, mid: automationStart.outgoingMid, high: automationStart.outgoingHigh });
@@ -5464,6 +5463,7 @@ export default function DjBooth() {
             incomingElementRate: incomingAudio.playbackRate,
             overlapVolume: fixedGain?.volume ?? overlapVolume,
             gainDecision: fixedGain ?? null,
+            releasedBassOverrides: entryBassOverrides,
           });
           setKickPhaseStatus("GRID GREEN · BPM RATIO LOCKED · CHANNEL OPEN");
         }
@@ -5475,6 +5475,19 @@ export default function DjBooth() {
         const elapsedOverlapBeats = ((runtime.virtualOutgoingTime ?? outgoingAudio.currentTime) - outgoing.exitRunway) / outgoingBeatSeconds;
         const musicalBeat = clamp(elapsedOverlapBeats - (runtime.loopExtensionBeats ?? 0), 0, automation.windowBeats);
         const automationMix = assistedAutomationAtBeat(automation, musicalBeat);
+        const startedBassSwapBeat = latestStartedBassSwapBeat(automation.bassSwapBeats, automation.windowBeats, automationMix.beat);
+        if (startedBassSwapBeat !== null && runtime.lastBassOverrideReleaseBeat !== startedBassSwapBeat) {
+          const releasedBassOverrides = releaseTransitionBassOverrides(liveBassOverride.current, [outgoing.deck, incoming.deck]);
+          runtime.lastBassOverrideReleaseBeat = startedBassSwapBeat;
+          reportCrowdLiveEvent("transition.bass-swap-enforced", {
+            transitionIndex: runtime.transitionIndex,
+            swapBeat: startedBassSwapBeat,
+            actualBeat: automationMix.beat,
+            outgoingDeck: outgoing.deck,
+            incomingDeck: incoming.deck,
+            releasedBassOverrides,
+          });
+        }
         if (!runtime.gainDecision) {
           runtime.gainCalibration = addAssistedGainCalibration(
             runtime.gainCalibration ?? emptyAssistedGainCalibration(),
@@ -5526,14 +5539,27 @@ export default function DjBooth() {
         if (endpointSnapEnabled) incomingAudio.currentTime = exactIncomingTime;
         setDeckRate(incoming.deck, baseRate);
         const endpointIncomingTime = endpointSnapEnabled ? exactIncomingTime : incomingAudio.currentTime;
-        changeDeckWithAutomatedEq(runtime, outgoing.deck, { low: -60, mid: -60, high: -60 });
         const currentAutomation = prepared.assistedAutomations?.[runtime.transitionIndex] ?? assistedOverlapAutomationCurrent.current;
         const endpointAutomation = assistedPlaying.current
           ? assistedAutomationAtBeat(currentAutomation, currentAutomation.windowBeats)
           : null;
         const fixedGain = assistedPlaying.current ? runtime.gainDecision : null;
-        // The automatic handoff restores incoming bass unless the DJ holds
-        // an explicit manual bass override.
+        // With no earlier cue, Z is the programmed bass swap. Reclaim both
+        // lows before applying it so any manual changes made during the
+        // overlap cannot suppress the outgoing cut or incoming opening.
+        if (endpointAutomation && currentAutomation.bassSwapBeats.length === 0) {
+          const releasedBassOverrides = releaseTransitionBassOverrides(liveBassOverride.current, [outgoing.deck, incoming.deck]);
+          runtime.lastBassOverrideReleaseBeat = currentAutomation.windowBeats;
+          reportCrowdLiveEvent("transition.bass-swap-enforced", {
+            transitionIndex: runtime.transitionIndex,
+            swapBeat: currentAutomation.windowBeats,
+            actualBeat: currentAutomation.windowBeats,
+            outgoingDeck: outgoing.deck,
+            incomingDeck: incoming.deck,
+            releasedBassOverrides,
+          });
+        }
+        changeDeckWithAutomatedEq(runtime, outgoing.deck, { low: -60, mid: -60, high: -60 });
         // DJ, 27 Aug 2026: ...and that restore RAMPS over ~240 ms instead of
         // stepping. The gig-level recording measured a 12-15 dB snap out of
         // the ease-out trough when EQ, bass and gain-lock volume landed in
@@ -5541,9 +5567,8 @@ export default function DjBooth() {
         // restore starts from the deck's pre-handoff state and the blend
         // tick interpolates to these targets (finishDemoBlend completes it
         // if the blend ends first).
-        // A manual bass toggle still owns Low through the handoff restore.
         // With no selected bass cut, the kill swaps at Z, not during the
-        // subsequent level-restoration ramp. Manual EQ overrides still win.
+        // subsequent level-restoration ramp.
         if (endpointAutomation && currentAutomation.bassSwapBeats.length === 0) {
           changeDeckWithAutomatedEq(runtime, incoming.deck, { low: fixedGain?.lowDb ?? 0 });
         }

@@ -17,13 +17,6 @@ test("a manual kill applies immediately outside transition automation", () => {
   }
 });
 
-test("transition automation overrides manual bass kill and live choices", () => {
-  for (const automatedLow of [-60, -24, -12, -6, 0, 3]) {
-    assert.equal(overriddenBassLow(automatedLow, "kill", 0, true), automatedLow);
-    assert.equal(overriddenBassLow(automatedLow, "live", 0, true), automatedLow);
-  }
-});
-
 test("the second press opens bass even when automation still wants it killed", () => {
   const held = nextBassOverride("kill", -60);
   assert.equal(held, "live");

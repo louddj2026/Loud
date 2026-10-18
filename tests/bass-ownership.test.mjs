@@ -4,6 +4,7 @@ import {
   bassOwnerAtBeat,
   bassOwnershipSegments,
   bassSwapWindowAtBeat,
+  latestStartedBassSwapBeat,
   normaliseBassSwapBeats,
   resizeBassSwapBeats,
   toggleBassSwapBeat,
@@ -19,6 +20,14 @@ test("one swap behaves exactly like the old single bass cue", () => {
     { startBeat: 0, endBeat: 48, owner: "outgoing" },
     { startBeat: 48, endBeat: 96, owner: "incoming" },
   ]);
+});
+
+test("manual bass overrides are reclaimed only when a programmed swap begins", () => {
+  assert.equal(latestStartedBassSwapBeat([16, 48], 96, 15.24), null);
+  assert.equal(latestStartedBassSwapBeat([16, 48], 96, 15.25), 16);
+  assert.equal(latestStartedBassSwapBeat([16, 48], 96, 47.24), 16);
+  assert.equal(latestStartedBassSwapBeat([16, 48], 96, 47.25), 48);
+  assert.equal(latestStartedBassSwapBeat([], 96, 95), null);
 });
 
 test("the outgoing tune always owns the bass when the overlap opens", () => {

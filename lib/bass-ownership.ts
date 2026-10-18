@@ -94,6 +94,17 @@ export function bassSwapWindowAtBeat(swapBeats: readonly number[], windowBeats: 
   return { swapBeat: governing, startBeat, centreBeat: governing - .5, endBeat };
 }
 
+/** Latest programmed exchange whose sweep has begun at this musical beat. */
+export function latestStartedBassSwapBeat(swapBeats: readonly number[], windowBeats: number, beat: number) {
+  const swaps = normaliseBassSwapBeats(swapBeats, windowBeats);
+  let started: number | null = null;
+  for (const swap of swaps) {
+    if (beat >= swap - .75) started = swap;
+    else break;
+  }
+  return started;
+}
+
 /** Rescale swap beats when the overlap length changes, keeping musical position. */
 export function resizeBassSwapBeats(swapBeats: readonly number[], fromWindowBeats: number, toWindowBeats: number) {
   if (!Number.isFinite(fromWindowBeats) || fromWindowBeats <= 0) return [];
