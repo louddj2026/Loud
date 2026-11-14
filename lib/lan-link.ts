@@ -14,13 +14,31 @@ function privateIpv4Rank(address: string) {
   return 0;
 }
 
+function lanInterfaceRank(name: string) {
+  const label = name.toLowerCase();
+  // These adapters commonly expose private-looking addresses that are only
+  // reachable by the host or a tunnel. They must never outrank the physical
+  // LAN used by a listener's phone.
+  if (/vethernet|hyper-v|wsl|docker|virtualbox|\bvbox\b|vmware|bluetooth|loopback/.test(label)) return 0;
+  if (/wi-?fi|wireless|\bwlan\b/.test(label)) return 4;
+  if (/ethernet|\blan\b/.test(label)) return 3;
+  if (/tailscale|wireguard|\bvpn\b|\btun\d*\b|\btap\d*\b/.test(label)) return 1;
+  return 2;
+}
+
 export function selectLanIpv4(interfaces: Record<string, NetworkAddress[] | undefined>) {
-  return Object.values(interfaces)
-    .flatMap((addresses) => addresses ?? [])
-    .filter((entry) => !entry.internal && (entry.family === "IPv4" || entry.family === 4))
-    .map((entry) => ({ address: entry.address, rank: privateIpv4Rank(entry.address) }))
-    .filter((entry) => entry.rank > 0)
-    .sort((left, right) => right.rank - left.rank || left.address.localeCompare(right.address))[0]?.address ?? null;
+  return Object.entries(interfaces)
+    .flatMap(([name, addresses]) => (addresses ?? []).map((entry) => ({ name, entry })))
+    .filter(({ entry }) => !entry.internal && (entry.family === "IPv4" || entry.family === 4))
+    .map(({ name, entry }) => ({
+      address: entry.address,
+      addressRank: privateIpv4Rank(entry.address),
+      interfaceRank: lanInterfaceRank(name),
+    }))
+    .filter((entry) => entry.addressRank > 0 && entry.interfaceRank > 0)
+    .sort((left, right) => right.interfaceRank - left.interfaceRank
+      || right.addressRank - left.addressRank
+      || left.address.localeCompare(right.address))[0]?.address ?? null;
 }
 
 export function crowdPhoneUrl(address: string | null, port: string | number) {

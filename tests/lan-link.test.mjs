@@ -4,12 +4,21 @@ import { canDiscoverLanAddress, canServeLanDiscovery, crowdPhoneUrl, publicCrowd
 
 test("the phone link prefers the current private Wi-Fi address", () => {
   const address = selectLanIpv4({
+    "vEthernet (Default Switch)": [{ address: "192.168.160.1", family: "IPv4", internal: false }],
+    "vEthernet (WSL (Hyper-V firewall))": [{ address: "172.22.64.1", family: "IPv4", internal: false }],
     VPN: [{ address: "10.20.0.4", family: "IPv4", internal: false }],
-    WiFi: [{ address: "192.168.0.2", family: "IPv4", internal: false }],
+    "Wi-Fi 6": [{ address: "192.168.68.108", family: "IPv4", internal: false }],
     Loopback: [{ address: "127.0.0.1", family: "IPv4", internal: true }],
   });
-  assert.equal(address, "192.168.0.2");
-  assert.equal(crowdPhoneUrl(address, 3200), "http://192.168.0.2:3200/crowd");
+  assert.equal(address, "192.168.68.108");
+  assert.equal(crowdPhoneUrl(address, 3200), "http://192.168.68.108:3200/crowd");
+});
+
+test("host-only virtual switches are not advertised as phone links", () => {
+  assert.equal(selectLanIpv4({
+    "vEthernet (Default Switch)": [{ address: "192.168.160.1", family: "IPv4", internal: false }],
+    "vEthernet (WSL (Hyper-V firewall))": [{ address: "172.22.64.1", family: "IPv4", internal: false }],
+  }), null);
 });
 
 test("no phone link is advertised without a reachable network address", () => {
